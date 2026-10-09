@@ -1,0 +1,15 @@
+{
+  "diffEditor.renderSideBySide": false,
+  "files.insertFinalNewline": true,
+  "files.trimFinalNewlines": true,
+  "files.trimTrailingWhitespace": true,
+  "terminal.integrated.rightClickBehavior": "default",
+  "remote.autoForwardPorts": false,
+  "remote.autoForwardPortsFallback": 0,
+  "workbench.editor.enablePreview": false,
+  "workbench.editor.enablePreviewFromQuickOpen": false,
+  "editor.inlayHints.enabled": "off",
+  "[plaintext][markdown]": {
+    "editor.guides.indentation": false
+  }
+}

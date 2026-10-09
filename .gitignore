@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+*.log
+# Opening books are local only, never committed.
+books/
+*.bin

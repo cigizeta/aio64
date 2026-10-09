@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Aio64 board</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --text: #1f1f1f;
+        --muted: #6b6b6b;
+        --button-bg: #f0ece4;
+        --button-border: #c9c1b2;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --text: #ececec;
+          --muted: #a0a0a0;
+          --button-bg: #2f2c28;
+          --button-border: #555049;
+        }
+      }
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        background: transparent;
+        color: var(--text);
+        font-family: system-ui, sans-serif;
+        font-size: 14px;
+      }
+      main {
+        width: min(100%, 360px);
+        margin: 8px auto;
+      }
+      #board {
+        width: 100%;
+        aspect-ratio: 1;
+      }
+      #collapsed {
+        color: var(--muted);
+        text-align: center;
+        padding: 4px 0;
+      }
+      #header,
+      #status {
+        margin: 4px 0;
+        text-align: center;
+      }
+      #header {
+        color: var(--muted);
+        /* Kept when empty, so the board does not jump when a game arrives. */
+        min-height: 1.2em;
+      }
+      #status {
+        font-variant-numeric: tabular-nums;
+      }
+      #eval {
+        margin-left: 12px;
+        font-weight: 600;
+      }
+      #controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        justify-content: center;
+        margin-top: 6px;
+      }
+      #controls button {
+        min-width: 40px;
+        padding: 6px 10px;
+        border: 1px solid var(--button-border);
+        border-radius: 6px;
+        background: var(--button-bg);
+        color: var(--text);
+        font: inherit;
+        cursor: pointer;
+      }
+      #controls button:disabled {
+        opacity: 0.4;
+        cursor: default;
+      }
+      /* Three engine lines; the height stays fixed so the tabs never jump. */
+      #analysis {
+        margin-top: 8px;
+        min-height: calc(3 * 1.5em);
+        line-height: 1.5;
+        font-size: 13px;
+        color: var(--muted);
+        font-variant-numeric: tabular-nums;
+      }
+      #analysis div {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      #analysis .score {
+        display: inline-block;
+        min-width: 52px;
+        color: var(--text);
+        font-weight: 600;
+      }
+      #analysis .depth {
+        float: right;
+        margin-left: 8px;
+        font-size: 11px;
+      }
+      #tabs {
+        display: flex;
+        gap: 4px;
+        margin-top: 10px;
+        border-bottom: 1px solid var(--button-border);
+      }
+      .tab {
+        padding: 5px 12px;
+        border: none;
+        border-bottom: 2px solid transparent;
+        background: transparent;
+        color: var(--muted);
+        font: inherit;
+        cursor: pointer;
+      }
+      .tab.active {
+        color: var(--text);
+        border-bottom-color: var(--text);
+        font-weight: 600;
+      }
+      #moves,
+      #explorer,
+      #games {
+        height: 200px;
+        overflow-y: auto;
+        padding-top: 8px;
+      }
+      #moves {
+        line-height: 1.7;
+      }
+      #moves .move {
+        padding: 1px 3px;
+        border-radius: 3px;
+        cursor: pointer;
+      }
+      #moves .move:hover {
+        background: var(--button-bg);
+      }
+      #moves .move.current {
+        background: var(--button-border);
+        font-weight: 600;
+      }
+      #moves .variation {
+        color: var(--muted);
+      }
+      .toggle {
+        padding: 5px 10px;
+        border: 1px solid var(--button-border);
+        border-radius: 6px;
+        background: transparent;
+        color: var(--text);
+        font: inherit;
+        cursor: pointer;
+      }
+      .toggle.active {
+        background: var(--button-bg);
+        font-weight: 600;
+      }
+      #explorer-source {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 8px;
+      }
+      #explorer-status,
+      #games-status {
+        margin: 6px 0 2px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .rows {
+        list-style: none;
+        margin: 4px 0;
+        padding: 0;
+      }
+      .rows li {
+        display: flex;
+        gap: 8px;
+        padding: 3px 4px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+        overflow: hidden;
+      }
+      .rows li:hover {
+        background: var(--button-bg);
+      }
+      .rows .main {
+        min-width: 56px;
+        font-weight: 600;
+      }
+      .rows .muted {
+        color: var(--muted);
+      }
+      .rows .grow {
+        flex: 1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      [hidden] {
+        display: none !important;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="header"></div>
+      <div id="board"></div>
+      <div id="status"><span id="move"></span><span id="eval"></span></div>
+      <div id="controls">
+        <button id="flip" title="Flip board" aria-label="Flip board">&#x21C5;</button>
+        <button id="first" title="Beginning of game" aria-label="Beginning of game">&#x23EE;</button>
+        <button id="back" title="Back" aria-label="Back">&#x25C0;</button>
+        <button id="forward" title="Forward" aria-label="Forward">&#x25B6;</button>
+        <button id="last" title="End of game" aria-label="End of game">&#x23ED;</button>
+        <button id="mainline" title="Make the line through this move the main line">Raise</button>
+        <button id="explain">Explain</button>
+      </div>
+      <div id="analysis"></div>
+      <div id="tabs">
+        <button id="tab-moves" class="tab active">Moves</button>
+        <button id="tab-explorer" class="tab">Explorer</button>
+        <button id="tab-games" class="tab">Games</button>
+      </div>
+      <div id="explorer-source" hidden>
+        <button id="source-book" class="toggle" title="Explorer: the local opening book">Local</button>
+        <button id="as-side" class="toggle" title="Explorer: your games with the side at the bottom (flip to change)"></button>
+      </div>
+      <section id="moves"></section>
+      <section id="explorer" hidden>
+        <div id="explorer-status"></div>
+        <ul id="book-moves" class="rows" hidden></ul>
+        <ul id="explorer-moves" class="rows"></ul>
+        <ul id="explorer-games" class="rows"></ul>
+      </section>
+      <section id="games" hidden>
+        <div id="games-status"></div>
+        <ul id="games-list" class="rows"></ul>
+      </section>
+      <div id="collapsed" hidden>Continued below &#x2193;</div>
+    </main>
+    <script type="module" src="./board.ts"></script>
+  </body>
+</html>

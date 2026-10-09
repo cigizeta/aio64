@@ -1,0 +1,14 @@
+# Normalize text files to LF in the repository; Git decides checkout endings.
+* text=auto
+
+# Shell scripts must stay LF on every OS, or Bash fails with "bad interpreter".
+*.sh text eol=lf
+
+# Windows batch files need CRLF.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binaries.
+*.png binary
+*.jpg binary
+*.ico binary
