@@ -2,35 +2,34 @@
 
 ## Next
 
+- IndexedDB engine cache: check whether a second board shows `· cache`
+  (claude.ai keeps storage between widgets) or `· download`
+  (browser-analysis-v1.md). Then remove the test label from the depth
+  line.
 - Design the game search tools (lichess-games-v1.md, "Finding games").
 - More context for Explain (side played, clocks, move history): needs
   design (lichess-games-v1.md).
-
-## Before going public
-
-- License: done 2026-10-09, Aio64 is AGPLv3 only (`LICENSE`,
-  `package.json`, CLAUDE.md, README). Why: the developer's goal is that
-  nobody makes money by forking or using the code; no standard license
-  forbids commercial use, and non-commercial ones (PolyForm Noncommercial,
-  CC BY-NC) are incompatible with the GPL code Aio64 uses. Left: add the
-  AGPL notice to the source files' headers if wanted, and consider a short
-  legal consultation (this was not legal advice).
-- License check of every bundled or installed component. Checked
-  2026-10-09, all GPLv3-compatible: stockfish (Stockfish.js, GPL-3.0),
-  chessground and chessops (GPL-3.0-or-later), chess.js (BSD-2-Clause),
-  MCP sdk, ext-apps, zod, @echecs/zobrist (MIT). Still to do: confirm the
-  license of the Stockfish 19 lite NNUE net (sscg13) embedded in the
-  `.wasm`; keep Stockfish.js's notice ("Stockfish.js (c) 2026, Chess.com,
-  LLC, GPLv3"), credit it in the README, and point to its source at the
-  version used (corresponding source of the `.wasm`). Recheck after any
-  dependency is added.
-- OAuth instead of the static `x-api-key` header.
-- Git history: check for the ngrok domain (`git log -S`); rewrite or start
-  the public repository from a fresh commit.
-- README for other users: requirements (Volta, ngrok, scopeless Lichess
-  token; no Stockfish install, the widget runs Stockfish.js), setup,
-  connector configuration.
 - Move finished docs from `claude/active/` to `claude/done/`.
+
+## Public repository
+
+Public since 2026-10-09 (v0.1.0), started from a fresh commit: the old
+history, which held the ngrok domain, stays in a private archive
+repository and must never be pushed here.
+
+- License check, still to do: confirm the license of the Stockfish 19
+  lite NNUE net (sscg13) embedded in the `.wasm`, and point the README to
+  Stockfish.js's source at the version used (corresponding source of the
+  `.wasm`). Checked 2026-10-09, all GPLv3-compatible: stockfish
+  (Stockfish.js, GPL-3.0), chessground and chessops (GPL-3.0-or-later),
+  chess.js (BSD-2-Clause), MCP sdk, ext-apps, zod, @echecs/zobrist (MIT).
+  Recheck after any dependency is added.
+- License (AGPLv3 only, done): optionally add two-line headers to the
+  source files (`Copyright (C) 2026 Calogero Zarba` and
+  `SPDX-License-Identifier: AGPL-3.0-only`); consider a short legal
+  consultation (the license choice was not legal advice).
+- OAuth instead of the static `x-api-key` header: not needed while each
+  user runs their own server with their own `AIO64_TOKEN`.
 
 ## Later
 
