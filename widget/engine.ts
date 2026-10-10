@@ -71,17 +71,15 @@ function decode(base64: string): Uint8Array<ArrayBuffer> {
 }
 
 // The engine is kept in IndexedDB, as Lichess keeps its networks, so later
-// widgets skip the 2 MB download through claude.ai. Whether claude.ai's
-// sandbox keeps this storage between widgets is what `engineOrigin` shows.
-// Any storage failure falls back to downloading.
+// widgets skip the 2 MB download through claude.ai. claude.ai resets this
+// storage at each new chat but keeps it within one, even across a page
+// reload, so only a chat's first board downloads. Any storage failure
+// falls back to downloading.
 interface StoredEngine {
   version: string;
   js: string;
   wasm: Uint8Array<ArrayBuffer>;
 }
-
-/** Where the engine came from: "cache" (IndexedDB) or "download". */
-export let engineOrigin: "cache" | "download" | "" = "";
 
 function openStore(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -141,7 +139,6 @@ export async function startEngine(
       version: string;
     };
     let stored = await loadStored(version);
-    engineOrigin = stored ? "cache" : "download";
     if (!stored) {
       const js = await readText(app, "ui://aio64/engine/engine.js");
       const parts: string[] = [];

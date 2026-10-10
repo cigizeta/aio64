@@ -2,9 +2,6 @@
 
 ## Next
 
-- IndexedDB engine cache: run the test in engine-cache-test-v1.md
-  (needs the server, so the `.env` from Apollo). Then remove the test
-  label from the depth line.
 - Test tap-tap moves on mobile (touch-input-v1.md).
 - Design the game search tools (lichess-games-v1.md, "Finding games").
 - More context for Explain (side played, clocks, move history): needs

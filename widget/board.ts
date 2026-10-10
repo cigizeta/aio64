@@ -16,7 +16,7 @@ import {
   type TreeNode,
   walk,
 } from "./tree.js";
-import { type Analysis, analyzePosition, engineFailure, engineOrigin, startEngine, stopEngine } from "./engine.js";
+import { type Analysis, analyzePosition, engineFailure, startEngine, stopEngine } from "./engine.js";
 
 interface GameInfo {
   id: string;
@@ -385,8 +385,7 @@ function renderAnalysis(result: Analysis | undefined): void {
   }
   const depth = document.createElement("span");
   depth.className = "depth";
-  // The engine's origin is shown while the IndexedDB cache is being tested.
-  depth.textContent = `depth ${result.depth}${engineOrigin ? ` · ${engineOrigin}` : ""}`;
+  depth.textContent = `depth ${result.depth}`;
   analysisPanel.replaceChildren(
     ...result.lines.map((line, i) => {
       const row = document.createElement("div");

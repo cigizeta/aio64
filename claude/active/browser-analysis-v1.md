@@ -15,6 +15,11 @@ failures fall back to downloading. While testing whether claude.ai's
 sandbox keeps IndexedDB between widgets, the depth label shows `· cache`
 or `· download`.*
 
+*Verdict (developer, 2026-10-10, engine-cache-test-v1.md): claude.ai
+resets the widget's IndexedDB at each new chat. Within a chat it lasts,
+even across a page reload, so only the first board of each chat
+downloads the engine.*
+
 ## Goal
 
 All analysis runs in the widget, in the browser: Stockfish.js 19 lite

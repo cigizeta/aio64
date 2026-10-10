@@ -1,7 +1,14 @@
 # Engine Cache Test -- Plan v1
 
-*Status: plan, awaiting implementation and test (2026-10-10). Tests the
-IndexedDB engine cache added to browser-analysis-v1.md.*
+*Status: tested (2026-10-10). Tests the IndexedDB engine cache added to
+browser-analysis-v1.md.*
+
+## Verdict
+
+IndexedDB is reset at each new chat (developer, 2026-10-10). Within a
+chat it lasts, even across a page reload: only the first board of each
+chat downloads the engine. Mobile was not tested separately. The cache
+code is kept and the test labels are removed from the depth line.
 
 ## Question
 
@@ -44,10 +51,16 @@ outcome 2 from 3. Add a third temporary value:
 
 | Step                  | Desktop | Mobile |
 |-----------------------|---------|--------|
-| First board           |         |        |
-| Second board, same chat |       |        |
-| New chat              |         |        |
-| After reload / restart |        |        |
+| First board           | download |        |
+| Second board, same chat | cache |        |
+| New chat              | download |        |
+| After reload / restart | cache  |        |
+
+Desktop (2026-10-10, claude.ai web): storage works and lasts across a
+page reload, but each chat has its own: a new chat starts empty. Not one
+of the three outcomes above; claude.ai apparently gives each conversation
+its own widget origin. The cache saves the download for every board after
+the first in a chat.
 
 ## Afterwards
 
