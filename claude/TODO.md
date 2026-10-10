@@ -2,7 +2,6 @@
 
 ## Next
 
-- Design the game search tools (lichess-games-v1.md, "Finding games").
 - More context for Explain (side played, clocks, move history): needs
   design (lichess-games-v1.md).
 - Move finished docs from `claude/active/` to `claude/done/`.

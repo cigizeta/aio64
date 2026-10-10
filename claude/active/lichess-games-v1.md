@@ -79,7 +79,9 @@ through Aio64, and explain them in human language.
 - **Finding games, later:** search tools work on any player's games; the
   player is always named in the request (no list of accounts in `.env`,
   developer, 2026-10-09). To be designed: criteria, result format, how a
-  found game opens in the viewer.
+  found game opens in the viewer. *Covered (developer, 2026-10-10): by
+  the Explorer (search by position, below) and the Games tab
+  (games-tab-v1.md); no separate search tool.*
 
 ## Game search (discussion started 2026-10-09, to continue)
 
