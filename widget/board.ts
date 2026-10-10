@@ -97,9 +97,15 @@ let stale = false;
 /** The deepest browser analysis of each position (by position key). */
 const explained = new Map<string, Analysis>();
 
+// On phones and tablets dragging is awkward: tap the piece, then the square.
+// The primary pointer, unlike Chessground's 'ontouchstart' check, keeps
+// dragging on touchscreen laptops used with a mouse.
+const touchFirst = matchMedia("(pointer: coarse)").matches;
+
 const board = Chessground(byId("board"), {
   coordinates: false,
   orientation: "white",
+  draggable: { enabled: !touchFirst },
   movable: { free: false, color: "both", showDests: true, events: { after: (orig, dest) => onBoardMove(orig, dest) } },
 });
 
@@ -293,7 +299,7 @@ function openBoard(payload: BoardPayload & { board: BoardState }): void {
   setPath(state.path);
 }
 
-const app = new App({ name: "aio64-board", version: "0.1.0" });
+const app = new App({ name: "aio64-board", version: "0.2.0" });
 
 // Only the newest board widget is usable; once a newer one exists (below an
 // explanation, or opened for anything else) this one collapses to a line.
