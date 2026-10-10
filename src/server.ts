@@ -166,7 +166,7 @@ function authorized(req: IncomingMessage): boolean {
 }
 
 function buildMcpServer(): McpServer {
-  const server = new McpServer({ name: "aio64", version: "0.1.0" });
+  const server = new McpServer({ name: "aio64", version: "0.2.0" });
 
   registerAppResource(
     server,
