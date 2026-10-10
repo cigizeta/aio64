@@ -37,3 +37,7 @@ the target square) should be supported there.
 3. Mobile app: a piece cannot be dragged; tap-tap moves work, including
    a promotion and castling.
 4. Desktop browser: dragging and click-click both still work.
+
+## Result
+
+Passed (developer, 2026-10-10).

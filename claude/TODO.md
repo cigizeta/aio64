@@ -2,7 +2,6 @@
 
 ## Next
 
-- Test tap-tap moves on mobile (touch-input-v1.md).
 - Design the game search tools (lichess-games-v1.md, "Finding games").
 - More context for Explain (side played, clocks, move history): needs
   design (lichess-games-v1.md).
