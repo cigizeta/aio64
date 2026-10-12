@@ -299,7 +299,7 @@ function openBoard(payload: BoardPayload & { board: BoardState }): void {
   setPath(state.path);
 }
 
-const app = new App({ name: "aio64-board", version: "0.2.0" });
+const app = new App({ name: "aio64-board", version: "0.1.1" });
 
 // Only the newest board widget is usable; once a newer one exists (below an
 // explanation, or opened for anything else) this one collapses to a line.
