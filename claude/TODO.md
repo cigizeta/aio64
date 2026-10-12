@@ -2,11 +2,6 @@
 
 ## Next
 
-- IndexedDB engine cache: check whether a second board shows `· cache`
-  (claude.ai keeps storage between widgets) or `· download`
-  (browser-analysis-v1.md). Then remove the test label from the depth
-  line.
-- Design the game search tools (lichess-games-v1.md, "Finding games").
 - More context for Explain (side played, clocks, move history): needs
   design (lichess-games-v1.md).
 - Move finished docs from `claude/active/` to `claude/done/`.
