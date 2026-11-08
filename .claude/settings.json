@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "deny": ["Bash", "PowerShell", "NotebookEdit", "Monitor"],
+    "ask": ["Edit", "Write"],
+    "allow": [
+      "mcp__claude-vscode__getDiagnostics"
+    ]
+  }
+}
