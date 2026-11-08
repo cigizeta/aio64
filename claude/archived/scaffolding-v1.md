@@ -59,7 +59,7 @@ gradle/gradle-daemon-jvm.properties   generated
 gradle/wrapper/...             generated
 gradlew, gradlew.bat           generated
 composeApp/build.gradle.kts    kotlin { jvm(); jvmToolchain(25) }, compose.desktop { application { ... } }
-composeApp/src/jvmMain/kotlin/io/github/cigizeta/mentes/Main.kt   empty window titled "Mentes"
+composeApp/src/jvmMain/kotlin/io/github/<user>/mentes/Main.kt   empty window titled "Mentes"
 ```
 
 ## Steps
@@ -80,6 +80,6 @@ composeApp/src/jvmMain/kotlin/io/github/cigizeta/mentes/Main.kt   empty window t
 
 ## Naming
 
-- **Base package**: `io.github.cigizeta.mentes`.
+- **Base package**: `io.github.<user>.mentes`.
 - **Module**: `composeApp` (the JetBrains wizard default).
 - **Foojay plugin**: 1.0.0 (latest on plugins.gradle.org at planning time).

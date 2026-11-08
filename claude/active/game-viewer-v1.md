@@ -73,7 +73,7 @@ otherwise it behaves as today (single position, optional arrows).
 
 Layout, top to bottom:
 
-1. **Header:** `cigizeta (1850) vs opponent (1872), 0-1`.
+1. **Header:** `<your-lichess-user> (1850) vs <opponent> (1872), 0-1`.
 2. **Board:** view-only chessground, no coordinates, last move
    highlighted (`lastMove`).
 3. **Status line:** current move (`23...Nf6`, or `Start` before move 1)
@@ -113,7 +113,7 @@ widget/board.html    header, status line, controls markup and CSS
 1. `npm run typecheck`; restart `npm run dev`: the log shows the token
    check passed.
 2. Disconnect and reconnect the connector (new tools).
-3. In a new chat: "Open Lichess game <id>" with one of cigizeta's
+3. In a new chat: "Open Lichess game <id>" with one of the token owner's
    finished games. The viewer opens at the start.
 4. Step through; Explain on a middlegame position: arrows and evaluation
    appear, a message is posted, Claude explains.
@@ -125,7 +125,7 @@ widget/board.html    header, status line, controls markup and CSS
 
 ## Results (2026-10-09)
 
-- Startup: `Lichess token verified: cigizeta, no scopes`. Reconnect read
+- Startup: `Lichess token verified: <your-lichess-user>, no scopes`. Reconnect read
   `tools/list`, `resources/list`, `resources/read` (new widget URI).
 - A game opened in the viewer; Explain worked end to end.
 - **`sendMessage` on claude.ai fills the message box; the developer

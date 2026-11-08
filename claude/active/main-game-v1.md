@@ -36,7 +36,7 @@ board.
    line button never changes it. Without a Games-tab click, there is no
    main game.
 2. **Header.** The line above the board shows the main game's players,
-   whatever move is current: `cigizeta (1850) vs FosTerRon (1987), 1-0`
+   whatever move is current: `<your-lichess-user> (1850) vs <opponent> (1987), 1-0`
    (White first). No main game: the header is empty. The per-move labels
    ("N games through here", "Your analysis") go away.
 3. **Orientation.** Black at the bottom when the developer played Black

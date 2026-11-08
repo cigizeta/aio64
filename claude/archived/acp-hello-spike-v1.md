@@ -154,7 +154,7 @@ deprecated or removed names (`ClientSupport`, `SessionParameters`,
 - Root `build.gradle.kts`: `kotlinJvm apply false`.
 - `settings.gradle.kts`: `include(":acpSpike")`.
 - `acpSpike/build.gradle.kts`: `kotlinJvm` + `application`,
-  `jvmToolchain(25)`, `mainClass = "io.github.cigizeta.mentes.acpspike.MainKt"`.
+  `jvmToolchain(25)`, `mainClass = "io.github.<user>.mentes.acpspike.MainKt"`.
 - `acpSpike/src/main/kotlin/.../Main.kt`, in `runBlocking`:
   1. Start `npx @agentclientprotocol/claude-agent-acp@0.85.2-preview.19`;
      on `IOException`, print the `PATH` and exit. A daemon thread copies

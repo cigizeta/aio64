@@ -158,7 +158,7 @@ Stage 1:
 4. "Show me this position: <FEN>" -> Claude uses `open_board`.
 
 Stage 2:
-5. Reconnect. "Search my games": panel shows cigizeta's moves as White.
+5. Reconnect. "Search my games": panel shows the token owner's moves as White.
 6. Click moves down a line; switch to Black; change the player.
 7. Click a recent game: it loads in place at that position.
 8. Server log: only `/player` explorer URLs.
