@@ -18,8 +18,8 @@ import { type BoardState, type GameInfo, type TreeNode, games, getState, saveSta
 import { checkLichessToken, fetchGame, type Game, GameError, parseGameId, recentGames } from "./lichess.js";
 
 // All analysis runs in the widget: Stockfish.js lite single-threaded
-// (WebAssembly), offered to the widget as MCP resources it reads through
-// claude.ai. Embedded in the widget it made the HTML 2.7 MB, which
+// (WebAssembly). The widget loads it from unpkg; these MCP resources, read
+// through claude.ai, are the fallback when unpkg fails. Embedded in the widget it made the HTML 2.7 MB, which
 // claude.ai refused; the .wasm goes in base64 pieces about the size of a
 // widget that always loaded.
 const ENGINE_PIECE = 400 * 1024;
@@ -30,13 +30,15 @@ const engineJs = readFileSync(
 const engineWasm64 = readFileSync(
   createRequire(import.meta.url).resolve("stockfish/bin/stockfish-19-lite-single.wasm"),
 ).toString("base64");
-// The widget keeps the engine in IndexedDB under this version, and
-// downloads it again only when the version changes.
-const engineVersion = createHash("sha256").update(engineWasm64).digest("hex").slice(0, 12);
 const enginePieces: string[] = [];
 for (let at = 0; at < engineWasm64.length; at += ENGINE_PIECE) {
   enginePieces.push(engineWasm64.slice(at, at + ENGINE_PIECE));
 }
+
+// The widget loads the engine from unpkg, which Chrome's HTTP cache keeps
+// across chats (claude.ai resets the widget's own storage at each new
+// chat); the resources above are its fallback.
+const BOARD_CSP = { connectDomains: ["https://unpkg.com"] };
 
 const port = Number(process.env.PORT ?? 8000);
 const token = process.env.AIO64_TOKEN ?? "";
@@ -172,10 +174,10 @@ function buildMcpServer(): McpServer {
     server,
     "board",
     BOARD_URI,
-    { mimeType: RESOURCE_MIME_TYPE },
+    { mimeType: RESOURCE_MIME_TYPE, _meta: { ui: { csp: BOARD_CSP } } },
     async () => {
       note(`${Math.round(boardHtml.length / 1024)} kB`);
-      return { contents: [{ uri: BOARD_URI, mimeType: RESOURCE_MIME_TYPE, text: boardHtml }] };
+      return { contents: [{ uri: BOARD_URI, mimeType: RESOURCE_MIME_TYPE, text: boardHtml, _meta: { ui: { csp: BOARD_CSP } } }] };
     },
   );
 
@@ -186,7 +188,7 @@ function buildMcpServer(): McpServer {
     { mimeType: "application/json" },
     async (uri) => {
       note(`${enginePieces.length} pieces`);
-      return { contents: [{ uri: uri.href, mimeType: "application/json", text: JSON.stringify({ pieces: enginePieces.length, version: engineVersion }) }] };
+      return { contents: [{ uri: uri.href, mimeType: "application/json", text: JSON.stringify({ pieces: enginePieces.length }) }] };
     },
   );
   server.registerResource("engine-js", "ui://aio64/engine/engine.js", { mimeType: "text/javascript" }, async (uri) => {

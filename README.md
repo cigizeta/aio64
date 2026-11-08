@@ -35,8 +35,11 @@ finished games are analyzed.
   <https://lichess.org/account/oauth/token> with **no scopes ticked**.
 - Optional: a Polyglot opening book (`.bin`).
 
-No chess engine needs installing: the server hands Stockfish.js (npm
-package `stockfish`) to the widget.
+No chess engine needs installing: the widget loads Stockfish.js 19 lite
+(npm package `stockfish`, pinned in `package.json`) from
+[unpkg](https://unpkg.com), at exactly the installed version, and the
+browser caches it (about 2 MB the first time). If unpkg is unreachable,
+the server hands the same files to the widget, more slowly.
 
 ## Setup
 
@@ -82,8 +85,11 @@ npm run dev
 In another, the tunnel to it:
 
 ```bash
-ngrok http --url=<your-domain>.ngrok-free.dev 8000
+ngrok http 8000
 ```
+
+ngrok uses your account's dev domain; add `--url=<your-domain>` only if
+you have more than one.
 
 At startup the server checks the Lichess token (it must have no scopes),
 loads the book if configured, and logs one line per tool call.
@@ -127,4 +133,6 @@ or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public
 License for more details: the full text is in `LICENSE`.
 
 The board widget runs Stockfish.js (Copyright (C) 2026 Chess.com, LLC,
-GPLv3), built from the Stockfish chess engine by the Stockfish team.
+GPLv3), built from the Stockfish chess engine by the Stockfish team. Its
+source: <https://github.com/nmrugg/stockfish.js>, at the version pinned
+in `package.json`.

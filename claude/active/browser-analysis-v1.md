@@ -20,6 +20,10 @@ resets the widget's IndexedDB at each new chat. Within a chat it lasts,
 even across a page reload, so only the first board of each chat
 downloads the engine.*
 
+*Superseded in part (2026-11-08, cdn-engine-v1.md): the engine now comes
+from unpkg and Chrome's HTTP cache; the IndexedDB cache is removed and
+the resources remain only as the fallback.*
+
 ## Goal
 
 All analysis runs in the widget, in the browser: Stockfish.js 19 lite

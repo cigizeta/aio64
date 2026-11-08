@@ -13,9 +13,16 @@ import { position, positionKey } from "./tree.js";
  * once: no server round trip.
  *
  * The engine is not embedded in the widget (a 2.7 MB widget was refused by
- * claude.ai): it is read from the server as MCP resources, a manifest, the
- * loader, and the .wasm in base64 pieces.
+ * claude.ai). It comes from unpkg, pinned to the installed version: Chrome's
+ * HTTP cache keeps it across chats and browser restarts (about 0.1 s
+ * cached, 0.9 s the first time), where claude.ai resets the widget's own
+ * storage at each new chat. If unpkg fails, the engine is read from the
+ * server as MCP resources (a manifest, the loader, the .wasm in base64
+ * pieces), about ten times slower through claude.ai and the tunnel.
  */
+
+/** The installed stockfish package's version, set by the Vite build. */
+declare const __STOCKFISH_VERSION__: string;
 
 const LINES = 3;
 const MAX_PLIES = 8;
@@ -70,59 +77,44 @@ function decode(base64: string): Uint8Array<ArrayBuffer> {
   return bytes;
 }
 
-// The engine is kept in IndexedDB, as Lichess keeps its networks, so later
-// widgets skip the 2 MB download through claude.ai. claude.ai resets this
-// storage at each new chat but keeps it within one, even across a page
-// reload, so only a chat's first board downloads. Any storage failure
-// falls back to downloading.
-interface StoredEngine {
-  version: string;
-  js: string;
-  wasm: Uint8Array<ArrayBuffer>;
-}
-
-function openStore(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open("aio64", 1);
-    request.onupgradeneeded = () => request.result.createObjectStore("engine");
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
-  });
-}
-
-async function loadStored(version: string): Promise<StoredEngine | undefined> {
-  try {
-    const db = await openStore();
-    const stored = await new Promise<StoredEngine | undefined>((resolve, reject) => {
-      const request = db.transaction("engine").objectStore("engine").get("current");
-      request.onsuccess = () => resolve(request.result as StoredEngine | undefined);
-      request.onerror = () => reject(request.error);
-    });
-    db.close();
-    return stored?.version === version ? stored : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-/** Keeps only the current version. */
-async function saveStored(engine: StoredEngine): Promise<void> {
-  try {
-    const db = await openStore();
-    await new Promise<void>((resolve, reject) => {
-      const transaction = db.transaction("engine", "readwrite");
-      transaction.objectStore("engine").put(engine, "current");
-      transaction.oncomplete = () => resolve();
-      transaction.onerror = () => reject(transaction.error);
-    });
-    db.close();
-  } catch {
-    // not stored: the next widget downloads again
-  }
-}
-
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+// unpkg, not jsDelivr: jsDelivr refuses the stockfish package (over its
+// 150 MB per-package limit, the full builds' nets included). The loader
+// fetches the .wasm itself (instantiateStreaming), from the URL in its
+// fragment, so both files stay in the HTTP cache and Chrome may keep the
+// compiled module too. A Worker cannot start from a cross-origin URL, so
+// the loader is fetched and run as a blob:.
+const CDN = `https://unpkg.com/stockfish@${__STOCKFISH_VERSION__}/bin/stockfish-19-lite-single`;
+const CDN_TIMEOUT = 20_000;
+
+/** Resolves once the CDN engine answers uciok; rejects on any failure. */
+async function startFromCdn(): Promise<Worker> {
+  const response = await fetch(`${CDN}.js`);
+  if (!response.ok) throw new Error(`CDN ${response.status}`);
+  const jsUrl = URL.createObjectURL(new Blob([await response.text()], { type: "text/javascript" }));
+  const candidate = new Worker(`${jsUrl}#${encodeURIComponent(`${CDN}.wasm`)}`);
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error("CDN engine timeout")), CDN_TIMEOUT);
+      candidate.onerror = (event) => {
+        clearTimeout(timer);
+        reject(new Error(event.message || "CDN engine error"));
+      };
+      candidate.onmessage = (event: MessageEvent) => {
+        if (String(event.data) !== "uciok") return;
+        clearTimeout(timer);
+        resolve();
+      };
+      candidate.postMessage("uci");
+    });
+    return candidate;
+  } catch (error) {
+    candidate.terminate();
+    throw error;
+  }
 }
 
 /** Downloads and starts the engine; status texts until it is ready. */
@@ -132,27 +124,27 @@ export async function startEngine(
 ): Promise<void> {
   onAnalysis = handlers.analysis;
   onStatus = handlers.status;
+  onStatus("loading engine...");
   try {
-    onStatus("loading engine...");
-    const { pieces, version } = JSON.parse(await readText(app, "ui://aio64/engine/manifest.json")) as {
-      pieces: number;
-      version: string;
-    };
-    let stored = await loadStored(version);
-    if (!stored) {
-      const js = await readText(app, "ui://aio64/engine/engine.js");
-      const parts: string[] = [];
-      for (let i = 0; i < pieces; i++) {
-        onStatus(`loading engine ${i + 1}/${pieces}...`);
-        parts.push(await readText(app, `ui://aio64/engine/wasm-${i}.b64`));
-      }
-      stored = { version, js, wasm: decode(parts.join("")) };
-      void saveStored(stored);
+    worker = await startFromCdn();
+    worker.onerror = (event) => fail(`engine error: ${event.message || "unknown"}`);
+    worker.onmessage = (event: MessageEvent) => receive(String(event.data));
+    receive("uciok");
+    return;
+  } catch (error) {
+    console.warn("aio64: CDN engine failed, falling back to the server", error);
+  }
+  try {
+    const { pieces } = JSON.parse(await readText(app, "ui://aio64/engine/manifest.json")) as { pieces: number };
+    const js = await readText(app, "ui://aio64/engine/engine.js");
+    const parts: string[] = [];
+    for (let i = 0; i < pieces; i++) {
+      onStatus(`loading engine ${i + 1}/${pieces}...`);
+      parts.push(await readText(app, `ui://aio64/engine/wasm-${i}.b64`));
     }
-    const { js } = stored;
     // The loader takes its .wasm address from the worker URL's fragment, so
     // both become blob: URLs.
-    const wasmUrl = URL.createObjectURL(new Blob([stored.wasm], { type: "application/wasm" }));
+    const wasmUrl = URL.createObjectURL(new Blob([decode(parts.join(""))], { type: "application/wasm" }));
     const jsUrl = URL.createObjectURL(new Blob([js], { type: "text/javascript" }));
     worker = new Worker(`${jsUrl}#${encodeURIComponent(wasmUrl)}`);
   } catch (error) {
