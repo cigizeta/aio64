@@ -1,13 +1,31 @@
 # TODO
 
+## Where we are (2026-11-08, paused)
+
+- **Done and committed:** the engine loads from unpkg (cdn-engine-v1.md),
+  cached across chats; docs anonymized; `.claude/settings.json`.
+- **Implemented, working on desktop, NOT yet committed:** trees
+  (trees-v1.md, trees-plan-v1.md): up to 10 trees in one widget, a tree
+  selector, games never merged, `report_trees`; status line removed;
+  new layout. Still to do: the full test list in trees-plan-v1.md, the
+  phone, and the unexplained "(1)" count. Then commit.
+- **Next design:** local-games-v1.md (one SQLite file per Lichess and
+  Chess.com account, manual sync, no Lichess token, no Games tab,
+  Explorer sources). Open points listed there; the first is the
+  read-only rule change in CLAUDE.md.
+- **Project split:** Aio64 analyzes the developer's games with Claude;
+  Mentes becomes a database app; a master database with W/D/L is
+  planned in a separate project.
+
 ## Next
 
 - More context for Explain (side played, clocks, move history): needs
   design (lichess-games-v1.md).
 - Move finished docs from `claude/active/` to `claude/done/`
-  (cdn-engine-spike-v1.md once cdn-engine-v1.md is tested;
+  (cdn-engine-spike-v1.md and cdn-engine-v1.md: tested on desktop;
   gemini-cdn-engine.md and gemini-parallel-depth-calls.md go to
-  `archived/`).
+  `archived/`; trees-v1.md and trees-plan-v1.md once tested;
+  main-game-v1.md gets a "superseded in part, see trees-v1.md" note).
 
 ## Public repository
 
@@ -30,6 +48,10 @@ repository and must never be pushed here.
   user runs their own server with their own `AIO64_TOKEN`.
 
 ## Later
+
+- The Explorer's dot before a move (`• e4`) means "already in the current
+  tree"; confusing. Decide: remove it, make it explicit ("in tree"), or
+  keep it.
 
 - Note: progress notifications cannot reach a widget through claude.ai
   (depth-progress-spike-v1.md). Solved differently: the engine runs in the

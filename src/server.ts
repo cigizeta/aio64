@@ -14,7 +14,18 @@ import { z } from "zod";
 import { explorePlayer } from "./explorer.js";
 import { loadBook } from "./book.js";
 import { logCall, logLine, note, withNote } from "./log.js";
-import { type BoardState, type GameInfo, type TreeNode, games, getState, saveState, viewers } from "./cache.js";
+import {
+  type GameInfo,
+  type Tree,
+  type TreeNode,
+  type Trees,
+  MAX_TREES,
+  games,
+  getState,
+  latest,
+  saveState,
+  viewers,
+} from "./cache.js";
 import { checkLichessToken, fetchGame, type Game, GameError, parseGameId, recentGames } from "./lichess.js";
 
 // All analysis runs in the widget: Stockfish.js lite single-threaded
@@ -101,15 +112,24 @@ function gameInfo(id: string, game: Game): GameInfo {
   return { id, white, black, whiteRating, blackRating, result, opening };
 }
 
-function newBoard(rootFen: string, overrides: Partial<BoardState> = {}): BoardState {
-  return {
-    rootFen,
-    root: { children: [] },
-    path: [],
-    games: {},
-    flipped: false,
-    ...overrides,
-  };
+/** A new analysis tree: a position with no game. */
+function analysisTree(rootFen: string, flipped = false): Tree {
+  return { rootFen, root: { children: [] }, path: [], games: {}, flipped };
+}
+
+/**
+ * A board Claude opens from a position keeps the newest widget's trees and
+ * adds an analysis tree as the current one; at MAX_TREES it keeps the trees
+ * unchanged, with a notice for the widget.
+ */
+function withAnalysis(tree: Tree): { trees: Trees; notice?: string } {
+  const previous = latest.trees;
+  if (!previous) return { trees: { trees: [tree], current: 0 } };
+  if (previous.trees.length >= MAX_TREES) {
+    return { trees: previous, notice: `${MAX_TREES} trees open: close one to open another.` };
+  }
+  const trees = [...previous.trees, tree];
+  return { trees: { trees, current: trees.length - 1 } };
 }
 
 const MAX_NODES = 5000;
@@ -119,14 +139,18 @@ function countNodes(node: TreeNode): number {
 }
 
 /**
- * The widget payload: the board state and a fresh viewer ID recorded as the
+ * The widget payload: the trees and a fresh viewer ID recorded as the
  * newest widget overall. `propose` makes the widget fill the user's message
  * box with the Explain prompt once its analysis reaches depth 20.
  */
-function boardResult(text: string, board: BoardState, propose = false) {
+function boardResult(text: string, trees: Trees, propose = false, notice?: string) {
   const viewerId = randomUUID();
   viewers.newest = viewerId;
-  return { ...textResult(text), structuredContent: { board, viewerId, propose, book: Boolean(book), user: lichessUser } };
+  latest.trees = trees;
+  return {
+    ...textResult(text),
+    structuredContent: { trees, viewerId, propose, notice, book: Boolean(book), user: lichessUser },
+  };
 }
 
 const gameInfoSchema = z.object({
@@ -148,7 +172,7 @@ const treeNodeSchema: z.ZodType<TreeNode> = z.lazy(() =>
   }),
 );
 
-const boardStateSchema = z.object({
+const treeSchema = z.object({
   rootFen: z.string(),
   root: treeNodeSchema,
   path: z.array(z.number().int().min(0)),
@@ -156,6 +180,26 @@ const boardStateSchema = z.object({
   mainGame: z.string().optional(),
   flipped: z.boolean().default(false),
 });
+
+const treesSchema = z
+  .object({
+    trees: z.array(treeSchema).min(1).max(MAX_TREES),
+    current: z.number().int().min(0),
+  })
+  .refine((t) => t.current < t.trees.length, "current out of range");
+
+/** Parses a widget's trees from JSON; an error text if invalid or too large. */
+function parseTrees(state: string): Trees | string {
+  let parsed: Trees;
+  try {
+    parsed = treesSchema.parse(JSON.parse(state));
+  } catch {
+    return "Invalid board state";
+  }
+  const nodes = parsed.trees.reduce((sum, tree) => sum + countNodes(tree.root), 0);
+  if (nodes > MAX_NODES) return `Trees larger than ${MAX_NODES} moves`;
+  return parsed;
+}
 
 // X-Api-Key, not Authorization, so that Authorization stays free for OAuth
 // later. The claude.ai connector form offers only predefined header names,
@@ -215,10 +259,12 @@ function buildMcpServer(): McpServer {
     async ({ fen }) => {
       const check = validateFen(fen);
       if (!check.ok) return textResult(check.error ?? "Invalid FEN", true);
+      const { trees, notice } = withAnalysis(analysisTree(fen));
       return boardResult(
         "Board opened at the position. Stockfish analyzes it in the widget, which will propose the explanation prompt; wait for it.",
-        newBoard(fen),
-        true,
+        trees,
+        !notice,
+        notice,
       );
     },
   );
@@ -256,16 +302,33 @@ function buildMcpServer(): McpServer {
       _meta: { ui: { resourceUri: BOARD_URI, visibility: ["app"] } },
     },
     async ({ state }) => {
-      let parsed: BoardState;
-      try {
-        parsed = boardStateSchema.parse(JSON.parse(state));
-      } catch {
-        return textResult("Invalid board state", true);
-      }
-      if (countNodes(parsed.root) > MAX_NODES) return textResult(`Tree larger than ${MAX_NODES} moves`, true);
+      const parsed = parseTrees(state);
+      if (typeof parsed === "string") return textResult(parsed, true);
       const id = randomUUID().slice(0, 8);
       saveState(id, parsed);
       return { ...textResult(id), structuredContent: { id } };
+    },
+  );
+
+  // The newest widget reports its trees here (debounced), so that a board
+  // Claude opens next carries them over. Reports from superseded widgets
+  // are ignored. Server memory only, so read-only like save_board; hidden
+  // from Claude's tool list.
+  registerAppTool(
+    server,
+    "report_trees",
+    {
+      description: "Report the newest board widget's trees.",
+      inputSchema: { viewerId: z.string(), state: z.string().max(1_000_000) },
+      annotations: READ_ONLY,
+      _meta: { ui: { resourceUri: BOARD_URI, visibility: ["app"] } },
+    },
+    async ({ viewerId, state }) => {
+      if (viewers.newest !== viewerId) return textResult("superseded");
+      const parsed = parseTrees(state);
+      if (typeof parsed === "string") return textResult(parsed, true);
+      latest.trees = parsed;
+      return textResult("reported");
     },
   );
 
@@ -390,17 +453,17 @@ function buildMcpServer(): McpServer {
       if (state) {
         const saved = getState(state);
         if (saved) return boardResult("Board reopened.", saved);
-        return boardResult("Saved board not found; opened at the start.", newBoard(START_FEN));
+        const fallback = withAnalysis(analysisTree(START_FEN));
+        return boardResult("Saved board not found; opened at the start.", fallback.trees, false, fallback.notice);
       }
 
       if (fen) {
         const check = validateFen(fen);
         if (!check.ok) return textResult(check.error ?? "Invalid FEN", true);
       }
-      const overrides: Partial<BoardState> = {};
-      // No main game yet, so White is at the bottom unless flipped.
-      if (color === "black") overrides.flipped = true;
-      return boardResult("Board opened.", newBoard(fen ?? START_FEN, overrides));
+      // An analysis tree has no game, so White is at the bottom unless flipped.
+      const { trees, notice } = withAnalysis(analysisTree(fen ?? START_FEN, color === "black"));
+      return boardResult(notice ? `Board opened; no new tree (${MAX_TREES} open).` : "Board opened.", trees, false, notice);
     },
   );
 

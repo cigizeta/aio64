@@ -32,8 +32,8 @@ export interface TreeNode {
   visited?: number;
 }
 
-/** Everything a board widget needs to be rebuilt below Claude's answer. */
-export interface BoardState {
+/** One tree: a game (played or analysis) with the user's variations. */
+export interface Tree {
   rootFen: string;
   root: TreeNode;
   /** Child indexes from the root to the current node. */
@@ -42,19 +42,34 @@ export interface BoardState {
   /** The last game added from the Games tab (an ID in games): the header
    * shows its players, and the board turns to the user's side in it. */
   mainGame?: string;
-  /** Manual flip, reset whenever the main game changes. */
+  /** Manual flip. */
   flipped: boolean;
 }
 
-const states = new Map<string, BoardState>();
+export const MAX_TREES = 10;
 
-export function getState(id: string): BoardState | undefined {
+/** Everything a board widget needs to be rebuilt: 1 to MAX_TREES trees. */
+export interface Trees {
+  trees: Tree[];
+  /** Index of the tree shown on the board. */
+  current: number;
+}
+
+const states = new Map<string, Trees>();
+
+export function getState(id: string): Trees | undefined {
   return states.get(id);
 }
 
-export function saveState(id: string, state: BoardState): void {
+export function saveState(id: string, state: Trees): void {
   setBounded(states, id, state, 1000);
 }
+
+/**
+ * The newest widget's trees, reported by the widget itself, so that a
+ * board Claude opens next carries them over. Memory only.
+ */
+export const latest: { trees?: Trees } = {};
 
 /**
  * Only the newest board widget is usable (developer's rule); every older one

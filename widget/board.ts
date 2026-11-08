@@ -7,8 +7,8 @@ import "@lichess-org/chessground/assets/chessground.cburnett.css";
 import {
   addOrFollow,
   dests,
-  joinGame,
   makeMainLine,
+  plyOf,
   position,
   positionKey,
   sanOf,
@@ -27,21 +27,33 @@ interface GameInfo {
   result: string;
 }
 
-/** Mirrors the server's BoardState; saved as is for the re-show loop. */
-interface BoardState {
+/** Mirrors the server's Tree: one game (played or analysis) with variations. */
+interface Tree {
   rootFen: string;
   root: TreeNode;
   path: number[];
   games: Record<string, GameInfo>;
+  /** Set on a played-game tree: the game it holds. */
   mainGame?: string;
   flipped: boolean;
 }
 
+/** Mirrors the server's Trees; saved as is for the re-show loop. */
+interface Trees {
+  trees: Tree[];
+  current: number;
+}
+
+const MAX_TREES = 10;
+const TREES_FULL = `${MAX_TREES} trees open: close one to open another.`;
+
 interface BoardPayload {
-  board?: BoardState;
+  trees?: Trees;
   viewerId?: string;
   /** From explain_position: propose the Explain prompt at depth 20. */
   propose?: boolean;
+  /** Shown in the status line, e.g. when no tree could be added. */
+  notice?: string;
   /** Whether the server has a Polyglot book (the Explorer's Book source). */
   book?: boolean;
   /** The Lichess token's owner, the only player the Explorer and Games tabs show. */
@@ -54,17 +66,17 @@ function byId<T extends HTMLElement>(id: string): T {
   return element as T;
 }
 
-const viewerParts = ["header", "board", "status", "controls", "analysis", "tabs", "explorer-source", "moves", "explorer", "games"].map(
+const viewerParts = ["tree-row", "board", "controls", "analysis", "tabs", "explorer-source", "moves", "explorer", "games"].map(
   (id) => byId(id),
 );
 const gamesPanel = byId("games");
 const gamesStatus = byId("games-status");
 const gamesList = byId("games-list");
 const tabGames = byId<HTMLButtonElement>("tab-games");
-const header = byId("header");
+const treeSelect = byId<HTMLSelectElement>("tree-select");
+const treeCount = byId("tree-count");
+const closeTree = byId<HTMLButtonElement>("close-tree");
 const collapsed = byId("collapsed");
-const moveLabel = byId("move");
-const evalLabel = byId("eval");
 const movesPanel = byId("moves");
 const explorerPanel = byId("explorer");
 const tabMoves = byId<HTMLButtonElement>("tab-moves");
@@ -87,8 +99,10 @@ const buttons = {
 };
 
 // Widget state. Analyses are keyed by position (pieces, side to move,
-// castling), so they stay valid wherever the position appears in the tree.
-let state: BoardState | undefined;
+// castling), so they stay valid wherever the position appears, in any tree.
+// `state` is the current tree, the same object as trees.trees[current].
+let trees: Trees | undefined;
+let state: Tree | undefined;
 let steps: Step[] = [];
 let busy = false;
 let notice = "";
@@ -120,19 +134,85 @@ function rated(name: string, rating?: number): string {
 /** The Lichess token's owner, sent by the server with every board. */
 let user = "";
 
-// The main game is the last game added from the Games tab. The header
-// shows its players whatever move is current; no main game, no header.
-function mainGame(): GameInfo | undefined {
-  return state?.mainGame ? state.games[state.mainGame] : undefined;
+// A played-game tree's game; an analysis tree has none.
+function gameOf(tree: Tree | undefined): GameInfo | undefined {
+  return tree?.mainGame ? tree.games[tree.mainGame] : undefined;
 }
 
-function mainLabel(): string {
-  const game = mainGame();
+function mainGame(): GameInfo | undefined {
+  return gameOf(state);
+}
+
+function gameLabel(game: GameInfo | undefined): string {
   return game ? `${rated(game.white, game.whiteRating)} vs ${rated(game.black, game.blackRating)}, ${game.result}` : "";
 }
 
-// Black at the bottom when the user played Black in the main game, White
-// otherwise; the manual flip reverses it until the main game changes.
+function mainLabel(): string {
+  return gameLabel(mainGame());
+}
+
+// Tree selector: played-game trees by their game, analysis trees numbered
+// in order ("Analysis 1", "Analysis 2").
+function renderSelector(): void {
+  if (!trees) return;
+  let analyses = 0;
+  treeSelect.replaceChildren(
+    ...trees.trees.map((tree, i) => {
+      const option = document.createElement("option");
+      option.value = String(i);
+      option.textContent = gameLabel(gameOf(tree)) || `Analysis ${++analyses}`;
+      return option;
+    }),
+  );
+  treeSelect.value = String(trees.current);
+  treeCount.textContent = `(${trees.trees.length})`;
+  closeTree.disabled = stale || trees.trees.length <= 1;
+}
+
+function switchTree(index: number): void {
+  if (!trees || stale || index < 0 || index >= trees.trees.length) return;
+  void stillNewest();
+  trees.current = index;
+  state = trees.trees[index];
+  setPath(state.path);
+}
+
+/** Adds a tree and makes it current; false (nothing changes) at the cap. */
+function addTree(tree: Tree): boolean {
+  if (!trees || trees.trees.length >= MAX_TREES) return false;
+  trees.trees.push(tree);
+  trees.current = trees.trees.length - 1;
+  state = tree;
+  return true;
+}
+
+treeSelect.addEventListener("change", () => switchTree(Number(treeSelect.value)));
+
+// The last tree cannot be closed (the button is disabled then).
+closeTree.addEventListener("click", () => {
+  if (!trees || stale || trees.trees.length <= 1) return;
+  trees.trees.splice(trees.current, 1);
+  switchTree(Math.min(trees.current, trees.trees.length - 1));
+});
+
+// The newest widget reports its trees to the server (memory only), so that
+// a board Claude opens next carries them over. Debounced; stale widgets
+// never report.
+let reportTimer: ReturnType<typeof setTimeout> | undefined;
+
+function reportTrees(): void {
+  clearTimeout(reportTimer);
+  if (stale || !viewerId) return;
+  reportTimer = setTimeout(() => {
+    if (stale || !trees || !viewerId) return;
+    void app
+      .callServerTool({ name: "report_trees", arguments: { viewerId, state: JSON.stringify(trees) } })
+      .catch(() => undefined);
+  }, 1000);
+}
+
+// Black at the bottom when the user played Black in the tree's game, White
+// otherwise; the manual flip reverses it.
 function orientation(): "white" | "black" {
   const game = mainGame();
   const base = game && game.black.toLowerCase() === user.toLowerCase() ? "black" : "white";
@@ -144,8 +224,8 @@ function samePath(a: number[], b: number[]): boolean {
 }
 
 // Moves tab: the tree as PGN text, variations in parentheses, every move
-// clickable. No game tags in the text: the header names the game of the
-// current move.
+// clickable. No game tags in the text: the tree selector names the tree's
+// game.
 function renderMoves(): void {
   if (!state) return;
   const rootPos = position(state.rootFen);
@@ -196,7 +276,9 @@ function renderMoves(): void {
 
   movesPanel.replaceChildren();
   renderLine(movesPanel, state.root, [], 0, true);
-  if (!state.root.children.length) movesPanel.textContent = "No moves yet: drag a piece, or load a game from the Explorer.";
+  if (!state.root.children.length) {
+    movesPanel.textContent = "No moves yet: drag a piece, or open a game from the Games tab or the Explorer.";
+  }
   currentElement?.scrollIntoView({ block: "nearest" });
 }
 
@@ -213,11 +295,9 @@ function render(): void {
       dests: stale ? new Map() : (dests(step.fen) as Map<Key, Key[]>),
     },
   });
-  header.textContent = mainLabel();
+  renderSelector();
   board.set({ orientation: orientation() });
   updatePlayerControls();
-  moveLabel.textContent = step.label;
-  evalLabel.textContent = notice || result?.over || result?.lines[0]?.eval || "";
   renderAnalysis(result);
   const node = step.node;
   buttons.first.disabled = buttons.back.disabled = state.path.length === 0;
@@ -236,6 +316,7 @@ function setPath(path: number[]): void {
   notice = "";
   render();
   scheduleExplore();
+  reportTrees();
   if (!stale) analyzePosition(currentStep().fen);
 }
 
@@ -288,15 +369,22 @@ function onBoardMove(orig: Key, dest: Key): void {
   playMove(orig, dest, "queen");
 }
 
-function openBoard(payload: BoardPayload & { board: BoardState }): void {
-  state = payload.board;
+function openBoard(payload: BoardPayload & { trees: Trees }): void {
+  trees = payload.trees;
+  for (const tree of trees.trees) tree.flipped ??= false;
+  trees.current = Math.min(Math.max(trees.current, 0), trees.trees.length - 1);
+  state = trees.trees[trees.current];
   viewerId = payload.viewerId;
   proposeOnce = Boolean(payload.propose);
   hasBook = Boolean(payload.book);
-  state.flipped ??= false;
   user = payload.user ?? "Me";
   setSource(hasBook ? source : "games");
   setPath(state.path);
+  // After setPath, which clears the notice.
+  if (payload.notice) {
+    notice = payload.notice;
+    render();
+  }
 }
 
 const app = new App({ name: "aio64-board", version: "0.1.1" });
@@ -352,7 +440,6 @@ function onAnalysis(fen: string, analysis: Analysis): void {
     if (depthWaiters[i].key === key && ready) depthWaiters.splice(i, 1)[0].resolve(best);
   }
   if (state && positionKey(currentStep().fen) === key) {
-    evalLabel.textContent = notice || best.over || best.lines[0]?.eval || "";
     renderAnalysis(best);
     // explain_position: propose the Explain prompt once, at depth 20.
     if (ready && proposeOnce && !stale) {
@@ -373,7 +460,18 @@ function analysisForExplain(fen: string): Promise<Analysis> {
   return new Promise((resolve) => depthWaiters.push({ key, resolve }));
 }
 
+// The panel also carries messages (errors, the tree cap) above the lines:
+// the widget has no separate status line.
 function renderAnalysis(result: Analysis | undefined): void {
+  renderLines(result);
+  if (!notice) return;
+  const message = document.createElement("div");
+  message.className = "notice";
+  message.textContent = notice;
+  analysisPanel.prepend(message);
+}
+
+function renderLines(result: Analysis | undefined): void {
   if (!result || (!result.over && !result.lines.length)) {
     analysisPanel.replaceChildren();
     analysisPanel.textContent = stale ? "" : engineStatus || "analyzing...";
@@ -407,7 +505,7 @@ function analysisText(analysis: Analysis): string {
 }
 
 // Explain: the position's browser analysis, at least depth 20 (waiting if
-// needed, deeper if already computed); saves the whole tree, then fills the
+// needed, deeper if already computed); saves all the trees, then fills the
 // chat message so that Claude explains it in English and reopens the board
 // below its answer with the saved state.
 async function explain(): Promise<void> {
@@ -428,7 +526,7 @@ async function explain(): Promise<void> {
     busy = false;
     render();
 
-    const saved = await app.callServerTool({ name: "save_board", arguments: { state: JSON.stringify(state) } });
+    const saved = await app.callServerTool({ name: "save_board", arguments: { state: JSON.stringify(trees) } });
     const stateId = saved.isError ? undefined : (saved.structuredContent as { id?: string } | undefined)?.id;
 
     const game = mainLabel();
@@ -698,15 +796,41 @@ async function explore(refreshes = 0): Promise<void> {
   }
 }
 
-// Adds a clicked game; it becomes the main game (the header names it, the
-// manual flip is dropped). From the Explorer it joins the tree as the main
-// line and the board stays on the searched position. From the Games tab (a
-// game to review) the tree is replaced by that game alone, shown at its
-// final position.
+// Opens a clicked game in its own tree; games are never merged into another
+// tree. If its tree is already open, that tree becomes current. From the
+// Games tab (a game to review) it shows the final position; from the
+// Explorer, the searched position (else the final one).
 async function addGame(id: string, searchedFen: string, from: "explorer" | "games"): Promise<void> {
-  if (!state || stale) return;
+  if (!trees || stale) return;
   void stillNewest();
   const statusLine = from === "explorer" ? explorerStatus : gamesStatus;
+
+  // The game's main line is its own moves, so a ply count is a path of zeros.
+  const showAt = (ply: number) => {
+    showTab("moves");
+    setPath(new Array<number>(ply).fill(0));
+  };
+  const mainLineOf = (tree: Tree): string[] => {
+    const moves: string[] = [];
+    for (let node = tree.root.children[0]; node; node = node.children[0]) if (node.san) moves.push(node.san);
+    return moves;
+  };
+
+  const open = trees.trees.findIndex((tree) => tree.mainGame === id);
+  if (open >= 0) {
+    const tree = trees.trees[open];
+    trees.current = open;
+    state = tree;
+    const moves = mainLineOf(tree);
+    const ply = from === "explorer" ? plyOf(tree.rootFen, moves, searchedFen) : undefined;
+    showAt(ply ?? moves.length);
+    return;
+  }
+  if (trees.trees.length >= MAX_TREES) {
+    statusLine.textContent = TREES_FULL;
+    return;
+  }
+
   statusLine.textContent = "loading game...";
   try {
     const result = await app.callServerTool({ name: "load_game", arguments: { game: id } });
@@ -715,39 +839,21 @@ async function addGame(id: string, searchedFen: string, from: "explorer" | "game
       return;
     }
     const data = result.structuredContent as { game: GameInfo; startFen: string; moves: string[] };
-    if (from === "games") {
-      const root: TreeNode = { children: [] };
-      let node = root;
-      for (const san of data.moves) {
-        const child: TreeNode = { san, children: [], games: [id] };
-        node.children.push(child);
-        node = child;
-      }
-      state.rootFen = data.startFen;
-      state.root = root;
-      state.games = { [id]: data.game };
-      state.mainGame = id;
-      state.flipped = false;
-      showTab("moves");
-      setPath(new Array<number>(data.moves.length).fill(0));
+    const root: TreeNode = { children: [] };
+    let node = root;
+    for (const san of data.moves) {
+      const child: TreeNode = { san, children: [], games: [id] };
+      node.children.push(child);
+      node = child;
+    }
+    const tree: Tree = { rootFen: data.startFen, root, path: [], games: { [id]: data.game }, mainGame: id, flipped: false };
+    // Checked again: the cap may have been reached while loading.
+    if (!addTree(tree)) {
+      statusLine.textContent = TREES_FULL;
       return;
     }
-    const joined = joinGame(state.rootFen, state.root, id, data.startFen, data.moves, searchedFen);
-    if (!joined) {
-      statusLine.textContent = "This game never reaches a position of the current tree.";
-      return;
-    }
-    state.games[id] = data.game;
-    // A new main game drops the manual flip.
-    if (state.mainGame !== id) {
-      state.mainGame = id;
-      state.flipped = false;
-    }
-    // The searched position lies on the game's line, so after the promotion
-    // its path is all zeros, of the same length.
-    makeMainLine(state.root, joined.end);
-    showTab("moves");
-    setPath(new Array<number>(joined.searched.length).fill(0));
+    const ply = from === "explorer" ? plyOf(data.startFen, data.moves, searchedFen) : undefined;
+    showAt(ply ?? data.moves.length);
   } catch (error) {
     statusLine.textContent = error instanceof Error ? error.message : "Loading failed";
   }
@@ -819,7 +925,7 @@ new IntersectionObserver((entries) => {
 
 app.ontoolresult = (result) => {
   const payload = (result.structuredContent ?? {}) as BoardPayload;
-  if (payload.board) openBoard({ ...payload, board: payload.board });
+  if (payload.trees?.trees.length) openBoard({ ...payload, trees: payload.trees });
 };
 
 await app.connect();
