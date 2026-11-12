@@ -70,8 +70,10 @@ tables are general: a file could hold any set of games, from either site.
 
 **`meta`** (`key`, `value`): `schema_version` (a format change rebuilds
 from `source`, without re-fetching); the account the file syncs from
-(`site`, `username`); the Lichess sync cursor (`ended_at` of the newest
-stored game).
+(`site`, `username`); the Lichess sync cursor (see open point 7).
+
+**`pending`** (Lichess only): IDs of games in progress at the last sync,
+see open point 7.
 
 **`archives`** (Chess.com only): `month` (`2026-11`), `etag`,
 `last_modified`, `complete` (set once the month is over and fully
@@ -134,8 +136,10 @@ occurred three times (pieces, side to move, castling, en passant);
 
 ## Open
 
-1. **Sync confirmation.** claude.ai may ask for confirmation when a
-   non-read-only tool runs, even one called from the widget: to check.
+1. **Sync confirmation.** Settled (2026-11-12): a sync is expensive, so
+   the widget asks the developer to confirm before starting it. Still
+   to check when testing: whether claude.ai adds its own confirmation
+   for a non-read-only tool called from the widget.
 2. (Settled: finished games only, see "Format".)
 3. **Storage details.** Settled (2026-11-12): files in `games/`,
    ignored by git like `books/`, named `<site>-<username>.sqlite` with
@@ -147,13 +151,44 @@ occurred three times (pieces, side to move, castling, en passant);
 4. (Settled: every ply, Zobrist hash via `@echecs/zobrist`, already a
    dependency; replaces the Lichess player explorer.)
 5. (Settled: see "Format".)
-6. **Chess.com details to verify** against its current API documentation:
-   delay between a game's end and its appearance in the monthly archive;
-   rate limits (sequential requests); required headers. Any `User-Agent`
-   names Aio64 generically, never a personal address.
-7. **Lichess details to verify:** anonymous export rate limit; whether
-   `/api/games/user` without a token returns everything needed (clocks,
-   opening, status).
+6. **Chess.com** (checked 2026-11-12 against its published-data API
+   doc): serial requests are effectively unlimited; parallel ones may
+   get `429`, and abnormal activity may block the client. So the sync
+   requests one at a time. Responses carry `ETag` and `Last-Modified`
+   (send `If-None-Match` / `If-Modified-Since`, get `304`); send
+   `Accept-Encoding: gzip`. A recognizable `User-Agent` is recommended
+   (generic Aio64 name, never a personal address). Endpoints refresh
+   "at most once every 24 hours" unless noted, so a just-finished game
+   may appear late. The doc's game object lists `start_time` for daily
+   games only and omits `rated` and `initial_setup`: to verify on a real
+   archive response (else read them from the PGN tags).
+7. **Lichess** (checked 2026-11-12 against its OpenAPI spec): one
+   request at a time; on `429` wait at least a minute. The game export
+   streams 20 games per second without a token (enough: 5,000 games in
+   about 4 minutes). Parameters: `since`/`until` (ms), `finished`
+   (default true), `sort` (`dateAsc` for resuming), `pgnInJson`,
+   `perfType`. `since` filters on the game's creation time, not its
+   end, so a game created before the last sync but finished after it
+   would be missed by a plain cursor. Settled (2026-11-12, design left
+   to Claude):
+   - **Cursor:** `meta.lichess_cursor`, the newest creation time seen
+     in any game fetched, finished or not. Invariant: every game created
+     up to the cursor is either in `games` or in `pending`.
+   - **`pending`** (`site_id`, `started_at`): IDs only, of games that
+     were still in progress when fetched. Never moves or players: an
+     ongoing game is never stored.
+   - **Each sync:** (1) export since the cursor with `ongoing=true`,
+     `sort=dateAsc`; a finished game is stored, an unfinished one only
+     has its ID put in `pending`; the cursor advances with each batch,
+     in the same transaction. (2) Check `pending` through the export by
+     IDs (up to 300 per request): finished games are stored and leave
+     `pending`; aborted ones just leave it; the rest stay.
+   - The export in step (1) returns ongoing games with their (delayed)
+     moves too; the sync discards everything of them but the ID, and
+     nothing of an ongoing game reaches Claude or the widget.
+   - Whether ongoing games are visible without a token is to be checked
+     once in a browser before implementing; if not, this point reopens
+     (a time window was rejected: it can miss long games).
 8. Settled (2026-11-12): each batch (a Lichess page, a Chess.com month)
    is written in one transaction together with its cursor, so a failure
    loses at most that batch and the next press resumes. No rebuild
