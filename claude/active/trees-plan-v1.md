@@ -1,7 +1,7 @@
 # Trees -- Implementation Plan v1
 
-*Status: implemented and working on desktop web (2026-11-08); the full
-test list and the phone are not yet run.
+*Status: implemented and committed; tests 1-11 passed on desktop web
+(2026-11-12); test 12 (phone) not yet run.
 
 *Changes after implementation (developer, 2026-11-08): the status line
 (move and evaluation) is removed, since the evaluation repeated the first

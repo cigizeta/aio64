@@ -4,11 +4,14 @@
 
 - **Done and committed:** the engine loads from unpkg (cdn-engine-v1.md),
   cached across chats; docs anonymized; `.claude/settings.json`.
-- **Implemented, working on desktop, NOT yet committed:** trees
+- **Committed, tests 1-11 passed on desktop web (2026-11-12):** trees
   (trees-v1.md, trees-plan-v1.md): up to 10 trees in one widget, a tree
   selector, games never merged, `report_trees`; status line removed;
-  new layout. Still to do: the full test list in trees-plan-v1.md, the
-  phone, and the unexplained "(1)" count. Then commit.
+  new layout. Still to do: test 12 (phone), and the "(1)" count, not
+  seen again. Likely cause: a page reload rebuilds the widget from its
+  original tool result, losing trees added in the widget, and its first
+  report then overwrites the server's trees. Needs a design decision
+  (restore from the server, or accept a fresh start).
 - **Next design:** local-games-v1.md (one SQLite file per Lichess and
   Chess.com account, manual sync, no Lichess token, no Games tab,
   Explorer sources). Open points listed there; the first is the
@@ -48,6 +51,8 @@ repository and must never be pushed here.
   user runs their own server with their own `AIO64_TOKEN`.
 
 ## Later
+
+- Change the layout of the Games tab (to be designed).
 
 - The Explorer's dot before a move (`• e4`) means "already in the current
   tree"; confusing. Decide: remove it, make it explicit ("in tree"), or
