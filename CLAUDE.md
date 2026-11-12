@@ -112,6 +112,15 @@ never PowerShell or cmd: every command in a fenced block uses Bash syntax.
   through `npx` or npm scripts, never installed globally.
 - No Angular-like frameworks; libraries are fine.
 
+## Versioning
+
+Aio64 uses CalVer, `YYYY.M.MICRO`: year, month without a leading zero
+(npm requires valid semver, which forbids leading zeros), and a counter
+from 0 for each release in that month (`2026.11.0`, `2026.11.1`,
+`2026.12.0`). The version is written only in `package.json` (and
+`package-lock.json`, which npm keeps in step); the server and the
+widget read it from there.
+
 ## Licensing
 
 Aio64 is AGPLv3 only (`LICENSE`, `AGPL-3.0-only`): the developer's goal

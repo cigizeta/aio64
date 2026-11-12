@@ -41,6 +41,11 @@ for (let at = 0; at < engineWasm64.length; at += ENGINE_PIECE) {
 // chat); the resources above are its fallback.
 const BOARD_CSP = { connectDomains: ["https://unpkg.com"] };
 
+// Aio64's version (CalVer, YYYY.M.MICRO), kept only in package.json.
+const AIO64_VERSION = (
+  JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { version: string }
+).version;
+
 const port = Number(process.env.PORT ?? 8000);
 const token = process.env.AIO64_TOKEN ?? "";
 if (token.length < 32) {
@@ -201,7 +206,7 @@ function authorized(req: IncomingMessage): boolean {
 }
 
 function buildMcpServer(): McpServer {
-  const server = new McpServer({ name: "aio64", version: "0.1.1" });
+  const server = new McpServer({ name: "aio64", version: AIO64_VERSION });
 
   registerAppResource(
     server,
