@@ -1,22 +1,13 @@
 # TODO
 
-## Where we are (2026-11-08, paused)
+## Where we are (2026-11-12)
 
-- **Done and committed:** the engine loads from unpkg (cdn-engine-v1.md),
-  cached across chats; docs anonymized; `.claude/settings.json`.
-- **Committed, tests 1-11 passed on desktop web (2026-11-12):** trees
-  (trees-v1.md, trees-plan-v1.md): up to 10 trees in one widget, a tree
-  selector, games never merged, `report_trees`; status line removed;
-  new layout. The "(1)" count is explained: a page reload rebuilds the
-  widget from its original tool result, so trees added in the widget are
-  lost (and its report replaces the server's copy). Decided
-  (2026-11-12): a reload starts fresh, by design; no change.
-- **Next design:** local-games-v1.md (one SQLite file per Lichess and
-  Chess.com account, manual sync, no Lichess token, no Games tab,
-  Explorer sources): phases 1-2 implemented (2026-11-12), phase 3 (the
-  widget's tabs) next. Then the master database (master-db-v1.md,
-  master-db-plan-v1.md): built by Aio64 from PGN, replacing the Polyglot
-  book in the Explorer.
+- **Done, tested on desktop:** trees (trees-v1.md), local game
+  databases with sync and the All Games and Explorer tabs
+  (local-games-v1.md), the master database (master-db-v1.md), CalVer,
+  Zod 4 (zod4-plan-v1.md), Explain with the board beside the chat
+  (explain-command-v1.md).
+- **Next:** the phone check (below), then the "Later" items.
 - **Project split:** Aio64 analyzes the developer's games with Claude;
   Mentes becomes a database app; a master database with W/D/L is
   planned in a separate project.
@@ -25,11 +16,8 @@
 
 - More context for Explain (side played, move history): needs
   design (lichess-games-v1.md).
-- Move finished docs from `claude/active/` to `claude/done/`
-  (cdn-engine-spike-v1.md and cdn-engine-v1.md: tested on desktop;
-  gemini-cdn-engine.md and gemini-parallel-depth-calls.md go to
-  `archived/`; main-game-v1.md gets a "superseded in part, see
-  trees-v1.md" note).
+- Review the older docs still in `claude/active/` (from before
+  2026-10-09) and move the finished or stale ones.
 
 ## Public repository
 

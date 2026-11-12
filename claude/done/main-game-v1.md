@@ -1,5 +1,7 @@
 # Main Game, Header and Flip -- Plan v1
 
+*Superseded in part, see trees-v1.md.*
+
 *Status: implemented (2026-10-09), awaiting test. Plan approved
 2026-10-09. Original status: plan, awaiting approval (2026-10-09). Designed with the
 developer one question at a time; a first version, to be judged by eye.*
