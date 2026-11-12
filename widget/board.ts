@@ -7,8 +7,8 @@ import "@lichess-org/chessground/assets/chessground.cburnett.css";
 import {
   addOrFollow,
   dests,
-  joinGame,
   makeMainLine,
+  plyOf,
   position,
   positionKey,
   sanOf,
@@ -27,25 +27,37 @@ interface GameInfo {
   result: string;
 }
 
-/** Mirrors the server's BoardState; saved as is for the re-show loop. */
-interface BoardState {
+/** Mirrors the server's Tree: one game (played or analysis) with variations. */
+interface Tree {
   rootFen: string;
   root: TreeNode;
   path: number[];
   games: Record<string, GameInfo>;
+  /** Set on a played-game tree: the game it holds. */
   mainGame?: string;
   flipped: boolean;
 }
 
+/** Mirrors the server's Trees; saved as is for the re-show loop. */
+interface Trees {
+  trees: Tree[];
+  current: number;
+}
+
+const MAX_TREES = 10;
+const TREES_FULL = `${MAX_TREES} trees open: close one to open another.`;
+
 interface BoardPayload {
-  board?: BoardState;
+  trees?: Trees;
   viewerId?: string;
   /** From explain_position: propose the Explain prompt at depth 20. */
   propose?: boolean;
-  /** Whether the server has a Polyglot book (the Explorer's Book source). */
-  book?: boolean;
-  /** The Lichess token's owner, the only player the Explorer and Games tabs show. */
-  user?: string;
+  /** Shown in the status line, e.g. when no tree could be added. */
+  notice?: string;
+  /** Whether the master database exists (the Explorer's Master source). */
+  master?: boolean;
+  /** The configured accounts' usernames: the board turns to their side. */
+  users?: string[];
 }
 
 function byId<T extends HTMLElement>(id: string): T {
@@ -54,17 +66,49 @@ function byId<T extends HTMLElement>(id: string): T {
   return element as T;
 }
 
-const viewerParts = ["header", "board", "status", "controls", "analysis", "tabs", "explorer-source", "moves", "explorer", "games"].map(
-  (id) => byId(id),
-);
+const viewerParts = [
+  "tree-row",
+  "board",
+  "controls",
+  "analysis",
+  "tabs",
+  "explorer-source",
+  "games-bar",
+  "sync-confirm",
+  "games-filters",
+  "moves",
+  "explorer",
+  "games",
+].map((id) => byId(id));
 const gamesPanel = byId("games");
 const gamesStatus = byId("games-status");
 const gamesList = byId("games-list");
+const gamesMore = byId<HTMLButtonElement>("games-more");
+const gamesBar = byId("games-bar");
+const filtersToggle = byId<HTMLButtonElement>("filters-toggle");
+const filtersClear = byId<HTMLButtonElement>("filters-clear");
+const gamesFilters = byId("games-filters");
+const syncButton = byId<HTMLButtonElement>("sync");
+const syncConfirm = byId("sync-confirm");
+const syncYes = byId<HTMLButtonElement>("sync-yes");
+const syncNo = byId<HTMLButtonElement>("sync-no");
+const filterInputs = {
+  account: byId<HTMLSelectElement>("f-account"),
+  opponent: byId<HTMLInputElement>("f-opponent"),
+  color: byId<HTMLSelectElement>("f-color"),
+  result: byId<HTMLSelectElement>("f-result"),
+  termination: byId<HTMLSelectElement>("f-termination"),
+  speed: byId<HTMLSelectElement>("f-speed"),
+  rated: byId<HTMLSelectElement>("f-rated"),
+  thematic: byId<HTMLSelectElement>("f-thematic"),
+  from: byId<HTMLInputElement>("f-from"),
+  to: byId<HTMLInputElement>("f-to"),
+};
 const tabGames = byId<HTMLButtonElement>("tab-games");
-const header = byId("header");
+const treeSelect = byId<HTMLSelectElement>("tree-select");
+const treeCount = byId("tree-count");
+const closeTree = byId<HTMLButtonElement>("close-tree");
 const collapsed = byId("collapsed");
-const moveLabel = byId("move");
-const evalLabel = byId("eval");
 const movesPanel = byId("moves");
 const explorerPanel = byId("explorer");
 const tabMoves = byId<HTMLButtonElement>("tab-moves");
@@ -74,8 +118,8 @@ const explorerStatus = byId("explorer-status");
 const explorerMoves = byId("explorer-moves");
 const explorerGames = byId("explorer-games");
 const explorerSource = byId("explorer-source");
-const sourceBook = byId<HTMLButtonElement>("source-book");
-const bookMoves = byId("book-moves");
+const sourceMaster = byId<HTMLButtonElement>("source-master");
+const masterMoves = byId("master-moves");
 const buttons = {
   first: byId<HTMLButtonElement>("first"),
   back: byId<HTMLButtonElement>("back"),
@@ -87,8 +131,10 @@ const buttons = {
 };
 
 // Widget state. Analyses are keyed by position (pieces, side to move,
-// castling), so they stay valid wherever the position appears in the tree.
-let state: BoardState | undefined;
+// castling), so they stay valid wherever the position appears, in any tree.
+// `state` is the current tree, the same object as trees.trees[current].
+let trees: Trees | undefined;
+let state: Tree | undefined;
 let steps: Step[] = [];
 let busy = false;
 let notice = "";
@@ -117,25 +163,91 @@ function rated(name: string, rating?: number): string {
   return rating ? `${name} (${rating})` : name;
 }
 
-/** The Lichess token's owner, sent by the server with every board. */
-let user = "";
+/** The configured accounts' usernames, lowercased; sent with every board. */
+let users = new Set<string>();
 
-// The main game is the last game added from the Games tab. The header
-// shows its players whatever move is current; no main game, no header.
-function mainGame(): GameInfo | undefined {
-  return state?.mainGame ? state.games[state.mainGame] : undefined;
+// A played-game tree's game; an analysis tree has none.
+function gameOf(tree: Tree | undefined): GameInfo | undefined {
+  return tree?.mainGame ? tree.games[tree.mainGame] : undefined;
 }
 
-function mainLabel(): string {
-  const game = mainGame();
+function mainGame(): GameInfo | undefined {
+  return gameOf(state);
+}
+
+function gameLabel(game: GameInfo | undefined): string {
   return game ? `${rated(game.white, game.whiteRating)} vs ${rated(game.black, game.blackRating)}, ${game.result}` : "";
 }
 
-// Black at the bottom when the user played Black in the main game, White
-// otherwise; the manual flip reverses it until the main game changes.
+function mainLabel(): string {
+  return gameLabel(mainGame());
+}
+
+// Tree selector: played-game trees by their game, analysis trees numbered
+// in order ("Analysis 1", "Analysis 2").
+function renderSelector(): void {
+  if (!trees) return;
+  let analyses = 0;
+  treeSelect.replaceChildren(
+    ...trees.trees.map((tree, i) => {
+      const option = document.createElement("option");
+      option.value = String(i);
+      option.textContent = gameLabel(gameOf(tree)) || `Analysis ${++analyses}`;
+      return option;
+    }),
+  );
+  treeSelect.value = String(trees.current);
+  treeCount.textContent = `(${trees.trees.length})`;
+  closeTree.disabled = stale || trees.trees.length <= 1;
+}
+
+function switchTree(index: number): void {
+  if (!trees || stale || index < 0 || index >= trees.trees.length) return;
+  void stillNewest();
+  trees.current = index;
+  state = trees.trees[index];
+  setPath(state.path);
+}
+
+/** Adds a tree and makes it current; false (nothing changes) at the cap. */
+function addTree(tree: Tree): boolean {
+  if (!trees || trees.trees.length >= MAX_TREES) return false;
+  trees.trees.push(tree);
+  trees.current = trees.trees.length - 1;
+  state = tree;
+  return true;
+}
+
+treeSelect.addEventListener("change", () => switchTree(Number(treeSelect.value)));
+
+// The last tree cannot be closed (the button is disabled then).
+closeTree.addEventListener("click", () => {
+  if (!trees || stale || trees.trees.length <= 1) return;
+  trees.trees.splice(trees.current, 1);
+  switchTree(Math.min(trees.current, trees.trees.length - 1));
+});
+
+// The newest widget reports its trees to the server (memory only), so that
+// a board Claude opens next carries them over. Debounced; stale widgets
+// never report.
+let reportTimer: ReturnType<typeof setTimeout> | undefined;
+
+function reportTrees(): void {
+  clearTimeout(reportTimer);
+  if (stale || !viewerId) return;
+  reportTimer = setTimeout(() => {
+    if (stale || !trees || !viewerId) return;
+    void app
+      .callServerTool({ name: "report_trees", arguments: { viewerId, state: JSON.stringify(trees) } })
+      .catch(() => undefined);
+  }, 1000);
+}
+
+// Black at the bottom when one of the accounts played Black in the tree's
+// game, White otherwise; the manual flip reverses it.
 function orientation(): "white" | "black" {
   const game = mainGame();
-  const base = game && game.black.toLowerCase() === user.toLowerCase() ? "black" : "white";
+  const base = game && users.has(game.black.toLowerCase()) ? "black" : "white";
   return state?.flipped ? (base === "white" ? "black" : "white") : base;
 }
 
@@ -143,9 +255,9 @@ function samePath(a: number[], b: number[]): boolean {
   return a.length === b.length && a.every((v, i) => v === b[i]);
 }
 
-// Moves tab: the tree as PGN text, variations in parentheses, every move
-// clickable. No game tags in the text: the header names the game of the
-// current move.
+// PGN tab: the tree as PGN text, variations in parentheses, every move
+// clickable. No game tags in the text: the tree selector names the tree's
+// game.
 function renderMoves(): void {
   if (!state) return;
   const rootPos = position(state.rootFen);
@@ -196,7 +308,9 @@ function renderMoves(): void {
 
   movesPanel.replaceChildren();
   renderLine(movesPanel, state.root, [], 0, true);
-  if (!state.root.children.length) movesPanel.textContent = "No moves yet: drag a piece, or load a game from the Explorer.";
+  if (!state.root.children.length) {
+    movesPanel.textContent = "No moves yet: drag a piece, or open a game from All Games or the Explorer.";
+  }
   currentElement?.scrollIntoView({ block: "nearest" });
 }
 
@@ -213,11 +327,9 @@ function render(): void {
       dests: stale ? new Map() : (dests(step.fen) as Map<Key, Key[]>),
     },
   });
-  header.textContent = mainLabel();
+  renderSelector();
   board.set({ orientation: orientation() });
   updatePlayerControls();
-  moveLabel.textContent = step.label;
-  evalLabel.textContent = notice || result?.over || result?.lines[0]?.eval || "";
   renderAnalysis(result);
   const node = step.node;
   buttons.first.disabled = buttons.back.disabled = state.path.length === 0;
@@ -236,6 +348,7 @@ function setPath(path: number[]): void {
   notice = "";
   render();
   scheduleExplore();
+  reportTrees();
   if (!stale) analyzePosition(currentStep().fen);
 }
 
@@ -288,18 +401,28 @@ function onBoardMove(orig: Key, dest: Key): void {
   playMove(orig, dest, "queen");
 }
 
-function openBoard(payload: BoardPayload & { board: BoardState }): void {
-  state = payload.board;
+function openBoard(payload: BoardPayload & { trees: Trees }): void {
+  trees = payload.trees;
+  for (const tree of trees.trees) tree.flipped ??= false;
+  trees.current = Math.min(Math.max(trees.current, 0), trees.trees.length - 1);
+  state = trees.trees[trees.current];
   viewerId = payload.viewerId;
   proposeOnce = Boolean(payload.propose);
-  hasBook = Boolean(payload.book);
-  state.flipped ??= false;
-  user = payload.user ?? "Me";
-  setSource(hasBook ? source : "games");
+  hasMaster = Boolean(payload.master);
+  users = new Set((payload.users ?? []).map((name) => name.toLowerCase()));
+  setSource(source);
   setPath(state.path);
+  // After setPath, which clears the notice.
+  if (payload.notice) {
+    notice = payload.notice;
+    render();
+  }
 }
 
-const app = new App({ name: "aio64-board", version: "0.1.1" });
+// Aio64's version, injected at build time from package.json.
+declare const __AIO64_VERSION__: string;
+
+const app = new App({ name: "aio64-board", version: __AIO64_VERSION__ });
 
 // Only the newest board widget is usable; once a newer one exists (below an
 // explanation, or opened for anything else) this one collapses to a line.
@@ -352,7 +475,6 @@ function onAnalysis(fen: string, analysis: Analysis): void {
     if (depthWaiters[i].key === key && ready) depthWaiters.splice(i, 1)[0].resolve(best);
   }
   if (state && positionKey(currentStep().fen) === key) {
-    evalLabel.textContent = notice || best.over || best.lines[0]?.eval || "";
     renderAnalysis(best);
     // explain_position: propose the Explain prompt once, at depth 20.
     if (ready && proposeOnce && !stale) {
@@ -373,7 +495,18 @@ function analysisForExplain(fen: string): Promise<Analysis> {
   return new Promise((resolve) => depthWaiters.push({ key, resolve }));
 }
 
+// The panel also carries messages (errors, the tree cap) above the lines:
+// the widget has no separate status line.
 function renderAnalysis(result: Analysis | undefined): void {
+  renderLines(result);
+  if (!notice) return;
+  const message = document.createElement("div");
+  message.className = "notice";
+  message.textContent = notice;
+  analysisPanel.prepend(message);
+}
+
+function renderLines(result: Analysis | undefined): void {
   if (!result || (!result.over && !result.lines.length)) {
     analysisPanel.replaceChildren();
     analysisPanel.textContent = stale ? "" : engineStatus || "analyzing...";
@@ -407,9 +540,8 @@ function analysisText(analysis: Analysis): string {
 }
 
 // Explain: the position's browser analysis, at least depth 20 (waiting if
-// needed, deeper if already computed); saves the whole tree, then fills the
-// chat message so that Claude explains it in English and reopens the board
-// below its answer with the saved state.
+// needed, deeper if already computed), then sends the chat message so that
+// Claude explains it in English below this board, which stays live.
 async function explain(): Promise<void> {
   if (!state || !(await stillNewest())) return;
   const step = currentStep();
@@ -428,12 +560,15 @@ async function explain(): Promise<void> {
     busy = false;
     render();
 
-    const saved = await app.callServerTool({ name: "save_board", arguments: { state: JSON.stringify(state) } });
-    const stateId = saved.isError ? undefined : (saved.structuredContent as { id?: string } | undefined)?.id;
-
+    // Only the position: claude.ai keeps one board per chat, and this one
+    // stays live (beside the chat once the user clicks its fullscreen
+    // control), so the message says nothing about boards.
     const game = mainLabel();
-    const lines = [`Explain this position (${game ? `${game}, ` : ""}after ${step.label}).`, `FEN: ${step.fen}`, text];
-    if (stateId) lines.push(`After explaining, call open_board with state "${stateId}".`);
+    const lines = [
+      `Explain this position (${game ? `${game}, ` : ""}after ${step.label}).`,
+      `FEN: ${step.fen}`,
+      text,
+    ];
     await app.sendMessage({ role: "user", content: [{ type: "text", text: lines.join("\n") }] });
   } catch (error) {
     notice = error instanceof Error ? error.message : "Analysis failed";
@@ -456,8 +591,6 @@ buttons.flip.addEventListener("click", () => {
   if (!state || stale) return;
   state.flipped = !state.flipped;
   render();
-  // The Explorer shows the user's games with the side now at the bottom.
-  scheduleExplore();
 });
 
 buttons.mainline.addEventListener("click", () => {
@@ -474,21 +607,20 @@ buttons.mainline.addEventListener("click", () => {
   setPath(new Array<number>(depth).fill(0));
 });
 
-// Tabs: Moves | Explorer | Games. Explorer and Games show the user's own
-// games; each queries Lichess only while visible.
+// Tabs: PGN | Explorer | All Games (internally "moves", "explorer",
+// "games"). Explorer and All Games read the accounts' local game
+// databases (never a site), each only while visible.
 type Tab = "moves" | "explorer" | "games";
 let tab: Tab = "moves";
 
-// On the Explorer only, two buttons: Local (the book, when there is one)
-// and "<user> as <side>", where the side is the one at the bottom of the
-// board (Flip changes it). The player is always the Lichess token's owner,
-// never chosen in the widget.
+// On the Explorer only, two buttons, always shown: Master (the master
+// database; a message when it has not been built) and Personal (every
+// account, both colors).
 function updatePlayerControls(): void {
   if (stale) return;
   explorerSource.hidden = tab !== "explorer";
-  sourceBook.hidden = !hasBook;
-  sourceBook.classList.toggle("active", source === "book");
-  asSide.textContent = `${user} as ${orientation()}`;
+  sourceMaster.classList.toggle("active", source === "master");
+  asSide.textContent = "Personal";
   asSide.classList.toggle("active", source === "games");
 }
 
@@ -500,50 +632,124 @@ function showTab(next: Tab): void {
   movesPanel.hidden = tab !== "moves";
   explorerPanel.hidden = tab !== "explorer";
   gamesPanel.hidden = tab !== "games";
+  gamesBar.hidden = tab !== "games";
+  gamesFilters.hidden = tab !== "games" || !filtersOpen;
+  syncConfirm.hidden = true;
   updatePlayerControls();
   if (tab === "explorer") scheduleExplore();
-  if (tab === "games") void listRecentGames();
+  if (tab === "games") {
+    void listGames();
+    void followSync();
+  }
 }
 tabMoves.addEventListener("click", () => showTab("moves"));
 tabExplorer.addEventListener("click", () => showTab("explorer"));
 tabGames.addEventListener("click", () => showTab("games"));
 
-// Explorer panel: the chosen player's own games from the current position.
-// Requests are debounced so that stepping quickly does not flood Lichess,
-// and only the answer to the latest request is shown.
+// Explorer panel: every account's games from the current position.
+// Requests are debounced so that stepping quickly sends one query, and only
+// the answer to the latest request is shown.
 
 let exploreTimer: ReturnType<typeof setTimeout> | undefined;
-let refreshTimer: ReturnType<typeof setTimeout> | undefined;
 let exploreRequest = 0;
-
-// While the server's Lichess stream is open ("updating"), a fuller answer
-// may arrive; the panel asks again every few seconds (cache hits on the
-// server, no new Lichess requests), for the stream's 2 minutes at most.
-const REFRESH_MS = 5000;
-const MAX_REFRESHES = 24;
 
 interface ExplorerMove {
   uci: string;
   san: string;
   games: number;
-  wins: number;
+  /** From White's side, as on Lichess and Chess.com. */
+  white: number;
   draws: number;
-  losses: number;
-  performance?: number;
+  black: number;
 }
 
-interface RecentGame {
-  id: string;
+/**
+ * A move's results as a bar: White won, drawn, Black won, each as wide as
+ * its share. A share too narrow for its label shows no label.
+ */
+function resultBar(m: ExplorerMove): HTMLSpanElement {
+  const bar = document.createElement("span");
+  bar.className = "bar";
+  for (const [count, className] of [
+    [m.white, "white"],
+    [m.draws, "draw"],
+    [m.black, "black"],
+  ] as const) {
+    if (!count) continue;
+    const percent = (100 * count) / m.games;
+    const part = document.createElement("span");
+    part.className = className;
+    part.style.width = `${percent}%`;
+    if (percent >= 15) part.textContent = `${Math.round(percent)}%`;
+    bar.append(part);
+  }
+  bar.title = `White won ${m.white}, drawn ${m.draws}, Black won ${m.black}`;
+  return bar;
+}
+
+/** A game as the server lists it, from its account's side. */
+interface ListedGame {
+  /** The game key, `<site>:<site_id>`. */
+  key: string;
+  site: "lichess" | "chesscom";
+  account: string;
+  color: "white" | "black";
   opponent: string;
   opponentRating?: number;
   result: "win" | "draw" | "loss";
+  termination: string;
+  timeControl: string;
   speed: string;
-  month: string;
+  rated: boolean;
+  endedAt: number;
+  thematic: boolean;
+}
+
+const SITES = { lichess: "Lichess", chesscom: "Chess.com" };
+
+/** A time control for display: `180+2` becomes `3+2`, days stay `3d`. */
+function clock(timeControl: string): string {
+  const live = /^(\d+)\+(\d+)$/.exec(timeControl);
+  if (!live) return timeControl;
+  const minutes = Number(live[1]) / 60;
+  return `${Number.isInteger(minutes) ? minutes : minutes.toFixed(1)}+${live[2]}`;
+}
+
+/**
+ * A listed game, on two lines so that it fits the widget's width: color,
+ * opponent and result above; date (UTC), site and account, and clock
+ * below, smaller.
+ */
+function gameRow(g: ListedGame, onClick: () => void): HTMLLIElement {
+  const li = document.createElement("li");
+  li.className = "game";
+  const line = (cells: [string, string][]) => {
+    const div = document.createElement("div");
+    for (const [text, className] of cells) {
+      const span = document.createElement("span");
+      span.textContent = text;
+      span.className = className;
+      div.append(span);
+    }
+    return div;
+  };
+  li.append(
+    line([
+      ["", `side ${g.color}`],
+      [`${g.opponent}${g.opponentRating ? ` (${g.opponentRating})` : ""}`, "grow"],
+      [RESULTS[g.result], "result"],
+    ]),
+    // The account, not just its site: there may be several on one site.
+    line([
+      [`${new Date(g.endedAt).toISOString().slice(0, 10)} · ${SITES[g.site]} ${g.account} · ${clock(g.timeControl)}`, "muted"],
+    ]),
+  );
+  li.addEventListener("click", onClick);
+  return li;
 }
 
 function scheduleExplore(): void {
   clearTimeout(exploreTimer);
-  clearTimeout(refreshTimer);
   if (explorerPanel.hidden) return;
   exploreTimer = setTimeout(() => void explore(), 300);
 }
@@ -560,83 +766,86 @@ function row(cells: [string, string][], onClick: () => void): HTMLLIElement {
   return li;
 }
 
-const SPEEDS: Record<string, string> = { correspondence: "corr" };
-const RESULTS = { win: "won", draw: "drew", loss: "lost" };
+const RESULTS = { win: "win", draw: "draw", loss: "loss" };
 
-// Explorer source: the user's games (the player database) or Local (the
-// server's Polyglot book, offered only when one is configured). A new
-// widget starts on the user's games.
-let hasBook = false;
-let source: "games" | "book" = "games";
+// Explorer source: Personal (every account) or Master (the master
+// database). A new widget starts on Personal.
+let hasMaster = false;
+let source: "games" | "master" = "games";
 
-function setSource(next: "games" | "book"): void {
+function setSource(next: "games" | "master"): void {
   source = next;
-  bookMoves.hidden = source !== "book";
+  masterMoves.hidden = source !== "master";
   explorerMoves.hidden = explorerGames.hidden = source !== "games";
   updatePlayerControls();
   scheduleExplore();
 }
-sourceBook.addEventListener("click", () => setSource("book"));
+sourceMaster.addEventListener("click", () => setSource("master"));
 
-interface BookMove {
-  san: string;
-  uci: string;
-  percent: number;
+/**
+ * One row per move, most played first: the move (a dot when it is already
+ * in the tree here), its game count and its results bar. A click plays it.
+ */
+function moveRows(moves: ExplorerMove[], step: Step): HTMLLIElement[] {
+  const inTree = new Set(step.node.children.map((c) => c.san));
+  return moves.map((m) => {
+    const li = row(
+      [
+        [`${inTree.has(m.san) ? "• " : ""}${m.san}`, "main"],
+        [String(m.games), "count"],
+      ],
+      () => playMove(m.uci.slice(0, 2), m.uci.slice(2, 4), PROMOTIONS[m.uci[4] as keyof typeof PROMOTIONS]),
+    );
+    li.append(resultBar(m));
+    return li;
+  });
 }
 
-// The book never changes while the server runs, so answers are kept for
-// the widget's lifetime.
-const bookCache = new Map<string, BookMove[]>();
+// The master database never changes while the server runs, so answers are
+// kept for the widget's lifetime.
+const masterCache = new Map<string, ExplorerMove[]>();
 
-async function exploreBook(request: number): Promise<void> {
+async function exploreMaster(request: number): Promise<void> {
+  if (!hasMaster) {
+    explorerStatus.textContent = "No Master database available";
+    explorerStatus.classList.add("centered");
+    masterMoves.replaceChildren();
+    return;
+  }
   const step = currentStep();
   const key = positionKey(step.fen);
-  let moves = bookCache.get(key);
+  let moves = masterCache.get(key);
   if (!moves) {
-    const result = await app.callServerTool({ name: "book_moves", arguments: { fen: step.fen } });
+    const result = await app.callServerTool({ name: "master_moves", arguments: { fen: step.fen } });
     if (request !== exploreRequest) return;
     if (result.isError) {
       explorerStatus.textContent = textOf(result);
-      bookMoves.replaceChildren();
+      masterMoves.replaceChildren();
       return;
     }
-    moves = ((result.structuredContent ?? {}) as { moves?: BookMove[] }).moves ?? [];
-    bookCache.set(key, moves);
+    moves = ((result.structuredContent ?? {}) as { moves?: ExplorerMove[] }).moves ?? [];
+    masterCache.set(key, moves);
   }
-  explorerStatus.textContent = moves.length ? "" : "Out of book";
-  const inTree = new Set(step.node.children.map((c) => c.san));
-  bookMoves.replaceChildren(
-    ...moves.map((m) =>
-      row(
-        [
-          [`${inTree.has(m.san) ? "• " : ""}${m.san}`, "main"],
-          [`${m.percent}%`, "grow"],
-        ],
-        () => playMove(m.uci.slice(0, 2), m.uci.slice(2, 4), PROMOTIONS[m.uci[4] as keyof typeof PROMOTIONS]),
-      ),
-    ),
-  );
+  const total = moves.reduce((sum, m) => sum + m.games, 0);
+  explorerStatus.textContent = total ? `${total} games from here` : "Not in the master database";
+  masterMoves.replaceChildren(...moveRows(moves, step));
 }
 
-async function explore(refreshes = 0): Promise<void> {
+async function explore(): Promise<void> {
   if (!state || stale) return;
-  clearTimeout(refreshTimer);
   const request = ++exploreRequest;
-  if (source === "book") {
+  explorerStatus.classList.remove("centered");
+  if (source === "master") {
     try {
-      await exploreBook(request);
+      await exploreMaster(request);
     } catch (error) {
-      if (request === exploreRequest) explorerStatus.textContent = error instanceof Error ? error.message : "Book failed";
+      if (request === exploreRequest) explorerStatus.textContent = error instanceof Error ? error.message : "Search failed";
     }
     return;
   }
   const step = currentStep();
-  if (refreshes === 0) explorerStatus.textContent = "searching...";
   try {
-    const result = await app.callServerTool({
-      name: "explore_position",
-      arguments: { color: orientation(), fen: step.fen },
-    });
+    const result = await app.callServerTool({ name: "explore_position", arguments: { fen: step.fen } });
     if (request !== exploreRequest) return;
     if (result.isError) {
       explorerStatus.textContent = textOf(result);
@@ -644,69 +853,55 @@ async function explore(refreshes = 0): Promise<void> {
       explorerGames.replaceChildren();
       return;
     }
-    const data = (result.structuredContent ?? {}) as {
-      moves?: ExplorerMove[];
-      recentGames?: RecentGame[];
-      indexing?: boolean;
-      updating?: boolean;
-    };
+    const data = (result.structuredContent ?? {}) as { moves?: ExplorerMove[]; games?: ListedGame[]; total?: number };
     const moves = data.moves ?? [];
-    const games = data.recentGames ?? [];
-    const total = moves.reduce((sum, m) => sum + m.games, 0);
-    // The refresh is silent: a label promising an update makes the developer
-    // wait for a change that almost never comes (the data is usually
-    // complete; Lichess only re-checks for games played since its last
-    // indexing).
-    const refreshing = Boolean(data.updating) && refreshes < MAX_REFRESHES;
-    explorerStatus.textContent = `${total} games from here`;
-    if (refreshing) {
-      refreshTimer = setTimeout(() => {
-        if (request === exploreRequest) void explore(refreshes + 1);
-      }, REFRESH_MS);
-    }
+    const games = data.games ?? [];
+    const total = data.total ?? 0;
+    explorerStatus.textContent =
+      total > games.length ? `${total} games from here; the last ${games.length} below` : `${total} games from here`;
 
-    // Moves already in the tree at this node are marked with a dot.
-    const inTree = new Set(step.node.children.map((c) => c.san));
-    explorerMoves.replaceChildren(
-      ...moves.map((m) =>
-        row(
-          [
-            [`${inTree.has(m.san) ? "• " : ""}${m.san}`, "main"],
-            [String(m.games), "muted"],
-            [`+${m.wins} =${m.draws} -${m.losses}`, "grow"],
-            [m.performance ? String(m.performance) : "", "muted"],
-          ],
-          () => playMove(m.uci.slice(0, 2), m.uci.slice(2, 4), PROMOTIONS[m.uci[4] as keyof typeof PROMOTIONS]),
-        ),
-      ),
-    );
-    explorerGames.replaceChildren(
-      ...games.map((g) =>
-        row(
-          [
-            [RESULTS[g.result], "main"],
-            [`vs ${g.opponent}${g.opponentRating ? ` (${g.opponentRating})` : ""}`, "grow"],
-            [SPEEDS[g.speed] ?? g.speed, "muted"],
-            [g.month, "muted"],
-          ],
-          () => void addGame(g.id, step.fen, "explorer"),
-        ),
-      ),
-    );
+    explorerMoves.replaceChildren(...moveRows(moves, step));
+    explorerGames.replaceChildren(...games.map((g) => gameRow(g, () => void addGame(g.key, step.fen, "explorer"))));
   } catch (error) {
     if (request === exploreRequest) explorerStatus.textContent = error instanceof Error ? error.message : "Search failed";
   }
 }
 
-// Adds a clicked game; it becomes the main game (the header names it, the
-// manual flip is dropped). From the Explorer it joins the tree as the main
-// line and the board stays on the searched position. From the Games tab (a
-// game to review) the tree is replaced by that game alone, shown at its
-// final position.
+// Opens a clicked game in its own tree; games are never merged into another
+// tree. If its tree is already open, that tree becomes current. From the
+// All Games tab (a game to review) it shows the final position; from the
+// Explorer, the searched position (else the final one).
 async function addGame(id: string, searchedFen: string, from: "explorer" | "games"): Promise<void> {
-  if (!state || stale) return;
+  if (!trees || stale) return;
   void stillNewest();
   const statusLine = from === "explorer" ? explorerStatus : gamesStatus;
+
+  // The game's main line is its own moves, so a ply count is a path of zeros.
+  const showAt = (ply: number) => {
+    showTab("moves");
+    setPath(new Array<number>(ply).fill(0));
+  };
+  const mainLineOf = (tree: Tree): string[] => {
+    const moves: string[] = [];
+    for (let node = tree.root.children[0]; node; node = node.children[0]) if (node.san) moves.push(node.san);
+    return moves;
+  };
+
+  const open = trees.trees.findIndex((tree) => tree.mainGame === id);
+  if (open >= 0) {
+    const tree = trees.trees[open];
+    trees.current = open;
+    state = tree;
+    const moves = mainLineOf(tree);
+    const ply = from === "explorer" ? plyOf(tree.rootFen, moves, searchedFen) : undefined;
+    showAt(ply ?? moves.length);
+    return;
+  }
+  if (trees.trees.length >= MAX_TREES) {
+    statusLine.textContent = TREES_FULL;
+    return;
+  }
+
   statusLine.textContent = "loading game...";
   try {
     const result = await app.callServerTool({ name: "load_game", arguments: { game: id } });
@@ -715,98 +910,209 @@ async function addGame(id: string, searchedFen: string, from: "explorer" | "game
       return;
     }
     const data = result.structuredContent as { game: GameInfo; startFen: string; moves: string[] };
-    if (from === "games") {
-      const root: TreeNode = { children: [] };
-      let node = root;
-      for (const san of data.moves) {
-        const child: TreeNode = { san, children: [], games: [id] };
-        node.children.push(child);
-        node = child;
-      }
-      state.rootFen = data.startFen;
-      state.root = root;
-      state.games = { [id]: data.game };
-      state.mainGame = id;
-      state.flipped = false;
-      showTab("moves");
-      setPath(new Array<number>(data.moves.length).fill(0));
+    const root: TreeNode = { children: [] };
+    let node = root;
+    for (const san of data.moves) {
+      const child: TreeNode = { san, children: [], games: [id] };
+      node.children.push(child);
+      node = child;
+    }
+    const tree: Tree = { rootFen: data.startFen, root, path: [], games: { [id]: data.game }, mainGame: id, flipped: false };
+    // Checked again: the cap may have been reached while loading.
+    if (!addTree(tree)) {
+      statusLine.textContent = TREES_FULL;
       return;
     }
-    const joined = joinGame(state.rootFen, state.root, id, data.startFen, data.moves, searchedFen);
-    if (!joined) {
-      statusLine.textContent = "This game never reaches a position of the current tree.";
-      return;
-    }
-    state.games[id] = data.game;
-    // A new main game drops the manual flip.
-    if (state.mainGame !== id) {
-      state.mainGame = id;
-      state.flipped = false;
-    }
-    // The searched position lies on the game's line, so after the promotion
-    // its path is all zeros, of the same length.
-    makeMainLine(state.root, joined.end);
-    showTab("moves");
-    setPath(new Array<number>(joined.searched.length).fill(0));
+    const ply = from === "explorer" ? plyOf(data.startFen, data.moves, searchedFen) : undefined;
+    showAt(ply ?? data.moves.length);
   } catch (error) {
     statusLine.textContent = error instanceof Error ? error.message : "Loading failed";
   }
 }
 
-// Games tab: the player's last finished games, newest first, both colors.
-
-interface ListedGame {
-  id: string;
-  color: "white" | "black";
-  opponent: string;
-  opponentRating?: number;
-  result: "win" | "draw" | "loss";
-  speed: string;
-  endedAt?: number;
-}
-
-function ago(ms: number | undefined): string {
-  if (!ms) return "";
-  const seconds = (Date.now() - ms) / 1000;
-  if (seconds < 3600) return `${Math.max(1, Math.round(seconds / 60))} min ago`;
-  if (seconds < 86_400) return `${Math.round(seconds / 3600)} h ago`;
-  if (seconds < 2 * 86_400) return "yesterday";
-  if (seconds < 7 * 86_400) return `${Math.floor(seconds / 86_400)} days ago`;
-  return new Date(ms).toISOString().slice(0, 10);
-}
+// All Games: every account's games, newest first, both colors, narrowed by
+// the filters, 100 at a time ("More" adds the next page).
 
 let gamesRequest = 0;
+let filtersOpen = false;
+/** Games shown so far, and how many match the filters in all. */
+let gamesShown = 0;
+let gamesTotal = 0;
 
-async function listRecentGames(): Promise<void> {
+/** The filters as list_games arguments; an empty field means "any". */
+function filterArguments(): Record<string, unknown> {
+  const f = filterInputs;
+  const args: Record<string, unknown> = {};
+  if (f.account.value) args.account = f.account.value;
+  if (f.opponent.value.trim()) args.opponent = f.opponent.value.trim();
+  if (f.color.value) args.color = f.color.value;
+  if (f.result.value) args.result = f.result.value;
+  if (f.termination.value) args.termination = f.termination.value;
+  if (f.speed.value) args.speed = f.speed.value;
+  if (f.rated.value) args.rated = f.rated.value === "true";
+  if (f.thematic.value) args.thematic = f.thematic.value === "true";
+  // Dates are UTC days, as the list shows them; "to" includes its day.
+  if (f.from.value) args.from = f.from.valueAsNumber;
+  if (f.to.value) args.to = f.to.valueAsNumber + 86_400_000 - 1;
+  return args;
+}
+
+function filtersActive(): boolean {
+  return Object.keys(filterArguments()).length > 0;
+}
+
+/** Loads the first page (or, with `more`, the next one). */
+async function listGames(more = false): Promise<void> {
   if (!state || stale) return;
   const request = ++gamesRequest;
+  const offset = more ? gamesShown : 0;
   gamesStatus.textContent = "loading...";
+  filtersClear.hidden = !filtersActive();
+  filtersToggle.classList.toggle("active", filtersActive());
   try {
-    const result = await app.callServerTool({ name: "recent_games", arguments: {} });
+    const result = await app.callServerTool({
+      name: "list_games",
+      arguments: { ...filterArguments(), offset },
+    });
     if (request !== gamesRequest) return;
     if (result.isError) {
       gamesStatus.textContent = textOf(result);
       gamesList.replaceChildren();
+      gamesMore.hidden = true;
       return;
     }
-    const games = ((result.structuredContent ?? {}) as { games?: ListedGame[] }).games ?? [];
-    gamesStatus.textContent = `Your last ${games.length} finished games`;
-    gamesList.replaceChildren(
-      ...games.map((g) =>
-        row(
-          [
-            [RESULTS[g.result], "main"],
-            [g.color === "white" ? "W" : "B", "muted"],
-            [`vs ${g.opponent}${g.opponentRating ? ` (${g.opponentRating})` : ""}`, "grow"],
-            [SPEEDS[g.speed] ?? g.speed, "muted"],
-            [ago(g.endedAt), "muted"],
-          ],
-          () => void addGame(g.id, currentStep().fen, "games"),
-        ),
-      ),
-    );
+    const data = (result.structuredContent ?? {}) as { games?: ListedGame[]; total?: number; accounts?: string[] };
+    fillAccounts(data.accounts ?? []);
+    const games = data.games ?? [];
+    const rows = games.map((g) => gameRow(g, () => void addGame(g.key, currentStep().fen, "games")));
+    if (more) gamesList.append(...rows);
+    else gamesList.replaceChildren(...rows);
+    gamesShown = offset + games.length;
+    gamesTotal = data.total ?? 0;
+    gamesStatus.textContent =
+      gamesTotal === 0
+        ? filtersActive()
+          ? "No game matches the filters"
+          : "No games yet: sync to fetch them"
+        : `${gamesTotal} games${gamesShown < gamesTotal ? `; the last ${gamesShown} below` : ""}`;
+    gamesMore.hidden = gamesShown >= gamesTotal;
   } catch (error) {
     if (request === gamesRequest) gamesStatus.textContent = error instanceof Error ? error.message : "Loading failed";
+  }
+}
+
+/** The account filter's choices, from the server; filled once. */
+function fillAccounts(accounts: string[]): void {
+  const select = filterInputs.account;
+  if (select.options.length > 1 || accounts.length === 0) return;
+  for (const account of accounts) {
+    const option = document.createElement("option");
+    option.value = account;
+    option.textContent = account;
+    select.append(option);
+  }
+}
+
+filtersToggle.addEventListener("click", () => {
+  filtersOpen = !filtersOpen;
+  gamesFilters.hidden = !filtersOpen;
+});
+
+filtersClear.addEventListener("click", () => {
+  for (const input of Object.values(filterInputs)) input.value = "";
+  void listGames();
+});
+
+// A filter applies at once; the opponent's name after a short pause in
+// typing.
+let opponentTimer: ReturnType<typeof setTimeout> | undefined;
+for (const [name, input] of Object.entries(filterInputs)) {
+  if (name === "opponent") {
+    input.addEventListener("input", () => {
+      clearTimeout(opponentTimer);
+      opponentTimer = setTimeout(() => void listGames(), 400);
+    });
+  } else {
+    input.addEventListener("change", () => void listGames());
+  }
+}
+
+gamesMore.addEventListener("click", () => void listGames(true));
+
+// The sync: confirmed first (it may take minutes and fetch from both
+// sites), then started on the server, which runs it in the background; the
+// widget polls its status every 2 s and reloads the list at the end. A
+// widget opened during a sync finds it running and follows it too.
+
+interface SyncSummary {
+  account: string;
+  added: number;
+  skipped: number;
+  rejected: number;
+  error?: string;
+}
+
+const SYNC_POLL_MS = 2000;
+let syncTimer: ReturnType<typeof setTimeout> | undefined;
+
+syncButton.addEventListener("click", () => {
+  if (stale) return;
+  syncConfirm.hidden = false;
+  syncYes.focus();
+});
+syncNo.addEventListener("click", () => {
+  syncConfirm.hidden = true;
+});
+// A click on the dimmed backdrop, or Escape, cancels like Cancel.
+syncConfirm.addEventListener("click", (event) => {
+  if (event.target === syncConfirm) syncConfirm.hidden = true;
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !syncConfirm.hidden) syncConfirm.hidden = true;
+});
+syncYes.addEventListener("click", async () => {
+  syncConfirm.hidden = true;
+  if (stale) return;
+  syncButton.disabled = true;
+  gamesStatus.textContent = "starting sync...";
+  try {
+    const result = await app.callServerTool({ name: "sync_games", arguments: {} });
+    if (result.isError) {
+      gamesStatus.textContent = textOf(result);
+      syncButton.disabled = false;
+      return;
+    }
+    void followSync();
+  } catch (error) {
+    gamesStatus.textContent = error instanceof Error ? error.message : "Sync failed";
+    syncButton.disabled = false;
+  }
+});
+
+/** Polls sync_status while a sync runs; shows the summary at the end. */
+async function followSync(): Promise<void> {
+  clearTimeout(syncTimer);
+  if (stale) return;
+  try {
+    const result = await app.callServerTool({ name: "sync_status", arguments: {} });
+    const status = (result.structuredContent ?? {}) as { running?: boolean; progress?: string; summary?: SyncSummary[] };
+    if (status.running) {
+      syncButton.disabled = true;
+      if (tab === "games") gamesStatus.textContent = `Syncing: ${status.progress ?? ""}`;
+      syncTimer = setTimeout(() => void followSync(), SYNC_POLL_MS);
+      return;
+    }
+    // Only after a sync this widget followed: the button was disabled.
+    if (syncButton.disabled) {
+      syncButton.disabled = false;
+      await listGames();
+      const summary = (status.summary ?? [])
+        .map((s) => (s.error ? `${s.account}: ${s.error}` : `${s.account}: ${s.added} new`))
+        .join("; ");
+      if (summary) gamesStatus.textContent = `Sync done. ${summary}`;
+    }
+  } catch {
+    syncButton.disabled = false;
   }
 }
 
@@ -817,16 +1123,70 @@ new IntersectionObserver((entries) => {
   if (entries.some((e) => e.isIntersecting) && Date.now() - lastCheck > 2000) void stillNewest();
 }).observe(document.body);
 
+// claude.ai keeps one board per chat and sends each later open_board result
+// to it (observed 2026-11-12), instead of drawing a new board. A board
+// that receives a result is therefore the newest again: it expands if a
+// newer viewer ID had collapsed it, and takes the result's ID.
 app.ontoolresult = (result) => {
   const payload = (result.structuredContent ?? {}) as BoardPayload;
-  if (payload.board) openBoard({ ...payload, board: payload.board });
+  if (!payload.trees?.trees.length) return;
+  if (stale) expand();
+  openBoard({ ...payload, trees: payload.trees });
 };
 
-await app.connect();
-void startEngine(app, {
-  analysis: onAnalysis,
-  status: (text) => {
-    engineStatus = text;
-    if (state) render();
-  },
+function runEngine(): void {
+  void startEngine(app, {
+    analysis: onAnalysis,
+    status: (text) => {
+      engineStatus = text;
+      if (state) render();
+    },
+  });
+}
+
+// Picture-in-picture: the board floats over the chat, so it stays in view
+// while the explanation scrolls. Offered only when claude.ai lists "pip"
+// among the display modes it supports; until then the button stays hidden.
+const floatButton = byId<HTMLButtonElement>("float");
+let floating = false;
+
+function updateFloat(): void {
+  const context = app.getHostContext();
+  const modes = context?.availableDisplayModes ?? [];
+  floating = context?.displayMode === "pip";
+  floatButton.hidden = !modes.includes("pip");
+  floatButton.textContent = floating ? "Dock" : "Float";
+}
+
+floatButton.addEventListener("click", async () => {
+  try {
+    const result = await app.requestDisplayMode({ mode: floating ? "inline" : "pip" });
+    floating = result.mode === "pip";
+    floatButton.textContent = floating ? "Dock" : "Float";
+  } catch {
+    // The host refused: the board stays where it is.
+  }
 });
+
+app.addEventListener("hostcontextchanged", () => {
+  updateFloat();
+});
+
+// No button to move the board beside the chat: claude.ai's own fullscreen
+// control (the diagonal arrows) already puts it in the side pane, and
+// claude.ai refuses to do so automatically (an automatic request got
+// "kept inline", tested 2026-11-12).
+
+/** Undoes collapse(): the board shows again and analyzes again. */
+function expand(): void {
+  stale = false;
+  collapsed.hidden = true;
+  for (const part of viewerParts) part.hidden = false;
+  // The tabs decide which panels and bars show.
+  showTab(tab);
+  runEngine();
+}
+
+await app.connect();
+updateFloat();
+runEngine();

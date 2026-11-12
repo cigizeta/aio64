@@ -11,15 +11,16 @@ import {
 } from "@modelcontextprotocol/ext-apps/server";
 import { validateFen } from "chess.js";
 import { z } from "zod";
-import { explorePlayer } from "./explorer.js";
-import { loadBook } from "./book.js";
+import { checkHash } from "./hash.js";
+import { Master } from "./master.js";
 import { logCall, logLine, note, withNote } from "./log.js";
-import { type BoardState, type GameInfo, type TreeNode, games, getState, saveState, viewers } from "./cache.js";
-import { checkLichessToken, fetchGame, type Game, GameError, parseGameId, recentGames } from "./lichess.js";
+import { type Tree, type TreeNode, type Trees, MAX_TREES, latest, viewers } from "./cache.js";
+import { explore, listGames, loadGame } from "./games.js";
+import { type Account, accountDb, accountsFromEnv, startSync, syncStatus } from "./sync.js";
 
 // All analysis runs in the widget: Stockfish.js lite single-threaded
-// (WebAssembly), offered to the widget as MCP resources it reads through
-// claude.ai. Embedded in the widget it made the HTML 2.7 MB, which
+// (WebAssembly). The widget loads it from unpkg; these MCP resources, read
+// through claude.ai, are the fallback when unpkg fails. Embedded in the widget it made the HTML 2.7 MB, which
 // claude.ai refused; the .wasm goes in base64 pieces about the size of a
 // widget that always loaded.
 const ENGINE_PIECE = 400 * 1024;
@@ -30,13 +31,20 @@ const engineJs = readFileSync(
 const engineWasm64 = readFileSync(
   createRequire(import.meta.url).resolve("stockfish/bin/stockfish-19-lite-single.wasm"),
 ).toString("base64");
-// The widget keeps the engine in IndexedDB under this version, and
-// downloads it again only when the version changes.
-const engineVersion = createHash("sha256").update(engineWasm64).digest("hex").slice(0, 12);
 const enginePieces: string[] = [];
 for (let at = 0; at < engineWasm64.length; at += ENGINE_PIECE) {
   enginePieces.push(engineWasm64.slice(at, at + ENGINE_PIECE));
 }
+
+// The widget loads the engine from unpkg, which Chrome's HTTP cache keeps
+// across chats (claude.ai resets the widget's own storage at each new
+// chat); the resources above are its fallback.
+const BOARD_CSP = { connectDomains: ["https://unpkg.com"] };
+
+// Aio64's version (CalVer, YYYY.M.MICRO), kept only in package.json.
+const AIO64_VERSION = (
+  JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { version: string }
+).version;
 
 const port = Number(process.env.PORT ?? 8000);
 const token = process.env.AIO64_TOKEN ?? "";
@@ -54,17 +62,31 @@ try {
   process.exit(1);
 }
 
-const lichessToken = process.env.LICHESS_TOKEN ?? "";
-if (!lichessToken) {
-  console.error("LICHESS_TOKEN missing (see .env.example)");
+// Every database indexes positions by this hash: a wrong one would make
+// every lookup silently miss.
+checkHash();
+
+// The accounts whose finished games the server keeps, one SQLite file each.
+// Public data only: no site token is ever held.
+let accounts: Account[];
+try {
+  accounts = accountsFromEnv();
+} catch (error) {
+  console.error(error instanceof Error ? error.message : String(error));
   process.exit(1);
 }
-// The user is the token's owner, never configured separately.
-const lichessUser = await checkLichessToken(lichessToken);
-console.log(`Lichess token verified: ${lichessUser}, no scopes`);
+if (accounts.length === 0) {
+  console.error("No accounts: set LICHESS_USERS and/or CHESSCOM_USERS (see .env.example)");
+  process.exit(1);
+}
+const dbs = accounts.map(accountDb);
+for (const db of dbs) console.log(`Games of ${db.label}: ${db.countGames()} stored`);
+// The widget turns the board to the side these players had in a game.
+const usernames = accounts.map((account) => account.username);
 
-const book = loadBook(process.env.POLYGLOT_PATH);
-console.log(book ? `Polyglot book loaded: ${book.entries} entries` : "No POLYGLOT_PATH: book disabled");
+// The master database, if built (npm run build-master); read-only.
+const master = Master.open();
+console.log(master ? `Master database: ${master.games} games` : "No master database (npm run build-master)");
 
 // claude.ai caches widget HTML by URI, so a fixed URI keeps serving a stale
 // widget after a rebuild. A content hash in the URI makes every build new.
@@ -76,38 +98,32 @@ function textResult(text: string, isError = false) {
   return { isError, content: [{ type: "text" as const, text }] };
 }
 
-// Aio64 never changes anything anywhere; every tool says so to the client.
+// Every tool but sync_games changes nothing anywhere and says so to the
+// client; sync_games writes only to the accounts' own game databases.
 const READ_ONLY = { readOnlyHint: true };
 
 const fenInput = { fen: z.string().describe("FEN of the position") };
 
 const START_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
-/** A finished standard Lichess game, from the cache or from Lichess. */
-async function loadGame(input: string): Promise<{ id: string; game: Game }> {
-  const id = parseGameId(input);
-  let game = games.get(id);
-  if (!game) {
-    game = await fetchGame(id, lichessToken);
-    games.set(id, game);
+/** A new analysis tree: a position with no game. */
+function analysisTree(rootFen: string, flipped = false): Tree {
+  return { rootFen, root: { children: [] }, path: [], games: {}, flipped };
+}
+
+/**
+ * A board Claude opens from a position keeps the newest widget's trees and
+ * adds an analysis tree as the current one; at MAX_TREES it keeps the trees
+ * unchanged, with a notice for the widget.
+ */
+function withAnalysis(tree: Tree): { trees: Trees; notice?: string } {
+  const previous = latest.trees;
+  if (!previous) return { trees: { trees: [tree], current: 0 } };
+  if (previous.trees.length >= MAX_TREES) {
+    return { trees: previous, notice: `${MAX_TREES} trees open: close one to open another.` };
   }
-  return { id, game };
-}
-
-function gameInfo(id: string, game: Game): GameInfo {
-  const { white, black, whiteRating, blackRating, result, opening } = game;
-  return { id, white, black, whiteRating, blackRating, result, opening };
-}
-
-function newBoard(rootFen: string, overrides: Partial<BoardState> = {}): BoardState {
-  return {
-    rootFen,
-    root: { children: [] },
-    path: [],
-    games: {},
-    flipped: false,
-    ...overrides,
-  };
+  const trees = [...previous.trees, tree];
+  return { trees: { trees, current: trees.length - 1 } };
 }
 
 const MAX_NODES = 5000;
@@ -117,14 +133,18 @@ function countNodes(node: TreeNode): number {
 }
 
 /**
- * The widget payload: the board state and a fresh viewer ID recorded as the
+ * The widget payload: the trees and a fresh viewer ID recorded as the
  * newest widget overall. `propose` makes the widget fill the user's message
  * box with the Explain prompt once its analysis reaches depth 20.
  */
-function boardResult(text: string, board: BoardState, propose = false) {
+function boardResult(text: string, trees: Trees, propose = false, notice?: string) {
   const viewerId = randomUUID();
   viewers.newest = viewerId;
-  return { ...textResult(text), structuredContent: { board, viewerId, propose, book: Boolean(book), user: lichessUser } };
+  latest.trees = trees;
+  return {
+    ...textResult(text),
+    structuredContent: { trees, viewerId, propose, notice, master: Boolean(master), users: usernames },
+  };
 }
 
 const gameInfoSchema = z.object({
@@ -146,14 +166,34 @@ const treeNodeSchema: z.ZodType<TreeNode> = z.lazy(() =>
   }),
 );
 
-const boardStateSchema = z.object({
+const treeSchema = z.object({
   rootFen: z.string(),
   root: treeNodeSchema,
   path: z.array(z.number().int().min(0)),
-  games: z.record(gameInfoSchema),
+  games: z.record(z.string(), gameInfoSchema),
   mainGame: z.string().optional(),
   flipped: z.boolean().default(false),
 });
+
+const treesSchema = z
+  .object({
+    trees: z.array(treeSchema).min(1).max(MAX_TREES),
+    current: z.number().int().min(0),
+  })
+  .refine((t) => t.current < t.trees.length, "current out of range");
+
+/** Parses a widget's trees from JSON; an error text if invalid or too large. */
+function parseTrees(state: string): Trees | string {
+  let parsed: Trees;
+  try {
+    parsed = treesSchema.parse(JSON.parse(state));
+  } catch {
+    return "Invalid board state";
+  }
+  const nodes = parsed.trees.reduce((sum, tree) => sum + countNodes(tree.root), 0);
+  if (nodes > MAX_NODES) return `Trees larger than ${MAX_NODES} moves`;
+  return parsed;
+}
 
 // X-Api-Key, not Authorization, so that Authorization stays free for OAuth
 // later. The claude.ai connector form offers only predefined header names,
@@ -166,16 +206,16 @@ function authorized(req: IncomingMessage): boolean {
 }
 
 function buildMcpServer(): McpServer {
-  const server = new McpServer({ name: "aio64", version: "0.1.1" });
+  const server = new McpServer({ name: "aio64", version: AIO64_VERSION });
 
   registerAppResource(
     server,
     "board",
     BOARD_URI,
-    { mimeType: RESOURCE_MIME_TYPE },
+    { mimeType: RESOURCE_MIME_TYPE, _meta: { ui: { csp: BOARD_CSP } } },
     async () => {
       note(`${Math.round(boardHtml.length / 1024)} kB`);
-      return { contents: [{ uri: BOARD_URI, mimeType: RESOURCE_MIME_TYPE, text: boardHtml }] };
+      return { contents: [{ uri: BOARD_URI, mimeType: RESOURCE_MIME_TYPE, text: boardHtml, _meta: { ui: { csp: BOARD_CSP } } }] };
     },
   );
 
@@ -186,7 +226,7 @@ function buildMcpServer(): McpServer {
     { mimeType: "application/json" },
     async (uri) => {
       note(`${enginePieces.length} pieces`);
-      return { contents: [{ uri: uri.href, mimeType: "application/json", text: JSON.stringify({ pieces: enginePieces.length, version: engineVersion }) }] };
+      return { contents: [{ uri: uri.href, mimeType: "application/json", text: JSON.stringify({ pieces: enginePieces.length }) }] };
     },
   );
   server.registerResource("engine-js", "ui://aio64/engine/engine.js", { mimeType: "text/javascript" }, async (uri) => {
@@ -213,10 +253,12 @@ function buildMcpServer(): McpServer {
     async ({ fen }) => {
       const check = validateFen(fen);
       if (!check.ok) return textResult(check.error ?? "Invalid FEN", true);
+      const { trees, notice } = withAnalysis(analysisTree(fen));
       return boardResult(
         "Board opened at the position. Stockfish analyzes it in the widget, which will propose the explanation prompt; wait for it.",
-        newBoard(fen),
-        true,
+        trees,
+        !notice,
+        notice,
       );
     },
   );
@@ -239,72 +281,94 @@ function buildMcpServer(): McpServer {
     },
   );
 
-  // Explain stores the widget state here so that Claude reopens the board
-  // below its answer with a short ID instead of the whole state. Memory
-  // only; hidden from Claude's tool list.
+  // The newest widget reports its trees here (debounced), so that a board
+  // Claude opens next carries them over. Reports from superseded widgets
+  // are ignored. Server memory only, so read-only; hidden
+  // from Claude's tool list.
   registerAppTool(
     server,
-    "save_board",
+    "report_trees",
     {
-      description: "Store a board widget's state; returns a short ID.",
-      // The tree is recursive, so it travels as a JSON string and is
-      // validated here, rather than as a recursive tool input schema.
-      inputSchema: { state: z.string().max(1_000_000) },
+      description: "Report the newest board widget's trees.",
+      inputSchema: { viewerId: z.string(), state: z.string().max(1_000_000) },
       annotations: READ_ONLY,
       _meta: { ui: { resourceUri: BOARD_URI, visibility: ["app"] } },
     },
-    async ({ state }) => {
-      let parsed: BoardState;
-      try {
-        parsed = boardStateSchema.parse(JSON.parse(state));
-      } catch {
-        return textResult("Invalid board state", true);
-      }
-      if (countNodes(parsed.root) > MAX_NODES) return textResult(`Tree larger than ${MAX_NODES} moves`, true);
-      const id = randomUUID().slice(0, 8);
-      saveState(id, parsed);
-      return { ...textResult(id), structuredContent: { id } };
+    async ({ viewerId, state }) => {
+      if (viewers.newest !== viewerId) return textResult("superseded");
+      const parsed = parseTrees(state);
+      if (typeof parsed === "string") return textResult(parsed, true);
+      latest.trees = parsed;
+      return textResult("reported");
     },
   );
 
-  // The explorer panel: the token owner's own games from the current
-  // position (player database only). Always the token's owner, never a player
-  // chosen in the widget. Results go to the widget, never to Claude;
-  // hidden from Claude's tool list.
+  // Starts a sync of every account in the background and returns at once;
+  // the widget then polls sync_status. The only tool that writes: the
+  // accounts' game databases, nothing else. Hidden from Claude.
+  registerAppTool(
+    server,
+    "sync_games",
+    {
+      description: "Start syncing every account's finished games into the local databases.",
+      inputSchema: {},
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+      _meta: { ui: { resourceUri: BOARD_URI, visibility: ["app"] } },
+    },
+    async () => {
+      const outcome = startSync(accounts);
+      note(outcome);
+      return { ...textResult(outcome), structuredContent: { outcome } };
+    },
+  );
+
+  // The running or last sync: progress line and per-account summary.
+  // Server memory only; hidden from Claude.
+  registerAppTool(
+    server,
+    "sync_status",
+    {
+      description: "The current or last sync's progress and summary.",
+      inputSchema: {},
+      annotations: READ_ONLY,
+      _meta: { ui: { resourceUri: BOARD_URI, visibility: ["app"] } },
+    },
+    async () => {
+      const status = { ...syncStatus, summary: [...syncStatus.summary] };
+      return { ...textResult(status.running ? status.progress : "idle"), structuredContent: status };
+    },
+  );
+
+  // The Explorer's personal games: the moves played from a position and the
+  // games that reached it, over every account and both colors, from the
+  // local databases. Results go to the widget only; hidden from Claude.
   registerAppTool(
     server,
     "explore_position",
     {
-      description: "The user's own moves and recent games from a position.",
-      inputSchema: {
-        color: z.enum(["white", "black"]),
-        fen: z.string(),
-      },
+      description: "The moves and games of every account from a position.",
+      inputSchema: fenInput,
       annotations: READ_ONLY,
       _meta: { ui: { resourceUri: BOARD_URI, visibility: ["app"] } },
     },
-    async ({ color, fen }) => {
+    async ({ fen }) => {
       const check = validateFen(fen);
       if (!check.ok) return textResult(check.error ?? "Invalid FEN", true);
-      try {
-        const exploration = await explorePlayer(lichessUser, color, fen, lichessToken);
-        return { ...textResult(`${exploration.moves.length} moves`), structuredContent: { ...exploration } };
-      } catch (error) {
-        if (error instanceof GameError) return textResult(error.message, true);
-        return textResult(`Lichess error: ${error instanceof Error ? error.message : String(error)}`, true);
-      }
+      const exploration = explore(dbs, fen);
+      note(`${exploration.total} games`);
+      return { ...textResult(`${exploration.moves.length} moves`), structuredContent: { ...exploration } };
     },
   );
 
-  // The Explorer's Book source: the local Polyglot book's moves, with
-  // their share of the book's weight. Registered only when a book is
-  // configured; hidden from Claude.
-  if (book) {
+  // The Explorer's Master source: the master database's moves, with their
+  // counts and results from White's side. Registered only when the
+  // database has been built; hidden from Claude.
+  if (master) {
     registerAppTool(
       server,
-      "book_moves",
+      "master_moves",
       {
-        description: "The opening book's moves from a position.",
+        description: "The master database's moves from a position.",
         inputSchema: fenInput,
         annotations: READ_ONLY,
         _meta: { ui: { resourceUri: BOARD_URI, visibility: ["app"] } },
@@ -312,61 +376,61 @@ function buildMcpServer(): McpServer {
       async ({ fen }) => {
         const check = validateFen(fen);
         if (!check.ok) return textResult(check.error ?? "Invalid FEN", true);
-        const moves = book.moves(fen);
-        return { ...textResult(`${moves.length} book moves`), structuredContent: { moves } };
+        const moves = master.moves(fen);
+        return { ...textResult(`${moves.length} master moves`), structuredContent: { moves } };
       },
     );
   }
 
-  // The Games tab: the token owner's last finished games, to review them right
-  // after playing. Results go to the widget only; hidden from Claude.
+  // All Games: every account's games, newest first, filtered, a page at a
+  // time, from the local databases. Hidden from Claude.
   registerAppTool(
     server,
-    "recent_games",
+    "list_games",
     {
-      description: "The user's last finished games, newest first.",
-      inputSchema: {},
+      description: "Every account's finished games, newest first, filtered.",
+      inputSchema: {
+        account: z.string().optional(),
+        opponent: z.string().max(40).optional(),
+        color: z.enum(["white", "black"]).optional(),
+        result: z.enum(["win", "draw", "loss"]).optional(),
+        termination: z.string().max(20).optional(),
+        speed: z.enum(["bullet", "blitz", "rapid", "classical", "daily"]).optional(),
+        rated: z.boolean().optional(),
+        from: z.number().int().optional(),
+        to: z.number().int().optional(),
+        thematic: z.boolean().optional(),
+        offset: z.number().int().min(0).default(0),
+      },
       annotations: READ_ONLY,
       _meta: { ui: { resourceUri: BOARD_URI, visibility: ["app"] } },
     },
-    async () => {
-      try {
-        const list = await recentGames(lichessUser, lichessToken);
-        return { ...textResult(`${list.length} games`), structuredContent: { games: list } };
-      } catch (error) {
-        if (error instanceof GameError) return textResult(error.message, true);
-        return textResult(`Lichess error: ${error instanceof Error ? error.message : String(error)}`, true);
-      }
+    async ({ offset, ...filters }) => {
+      const page = listGames(dbs, filters, offset);
+      note(`${page.total} games`);
+      return {
+        ...textResult(`${page.games.length} of ${page.total} games`),
+        structuredContent: { ...page, accounts: dbs.map((db) => db.label) },
+      };
     },
   );
 
-  // A game found by the explorer; the widget joins its line into the tree.
-  // Same checks as open_board (finished games only); hidden from Claude's
-  // tool list.
+  // A game from the Explorer or All Games, by key (`<site>:<site_id>`), for
+  // a new tree. Only from the local databases, which hold finished games
+  // only; never from a site. Hidden from Claude.
   registerAppTool(
     server,
     "load_game",
     {
-      description: "A finished game's start position and moves.",
-      inputSchema: { game: z.string() },
+      description: "A stored game's start position and moves.",
+      inputSchema: { game: z.string().max(80) },
       annotations: READ_ONLY,
       _meta: { ui: { resourceUri: BOARD_URI, visibility: ["app"] } },
     },
     async ({ game }) => {
-      try {
-        const { id, game: loaded } = await loadGame(game);
-        return {
-          ...textResult("Game loaded."),
-          structuredContent: {
-            game: gameInfo(id, loaded),
-            startFen: loaded.initialFen ?? START_FEN,
-            moves: loaded.moves,
-          },
-        };
-      } catch (error) {
-        if (error instanceof GameError) return textResult(error.message, true);
-        return textResult(`Lichess error: ${error instanceof Error ? error.message : String(error)}`, true);
-      }
+      const loaded = loadGame(dbs, game);
+      if (!loaded) return textResult(`No stored game ${game}.`, true);
+      return { ...textResult("Game loaded."), structuredContent: loaded };
     },
   );
 
@@ -375,30 +439,22 @@ function buildMcpServer(): McpServer {
     "open_board",
     {
       description:
-        "Open an interactive chess board at a position (FEN) or the start, to explore the user's own games and review their recent ones.",
+        "Open an interactive chess board at a position (FEN) or the start, to explore the user's own games and review them.",
       inputSchema: {
         fen: z.string().optional().describe("Position to show"),
-        color: z.enum(["white", "black"]).optional().describe("Side at the bottom; the explorer shows the user's games with it"),
-        state: z.string().optional().describe("Saved board ID, to reopen"),
+        color: z.enum(["white", "black"]).optional().describe("Side at the bottom"),
       },
       annotations: READ_ONLY,
       _meta: { ui: { resourceUri: BOARD_URI } },
     },
-    async ({ fen, color, state }) => {
-      if (state) {
-        const saved = getState(state);
-        if (saved) return boardResult("Board reopened.", saved);
-        return boardResult("Saved board not found; opened at the start.", newBoard(START_FEN));
-      }
-
+    async ({ fen, color }) => {
       if (fen) {
         const check = validateFen(fen);
         if (!check.ok) return textResult(check.error ?? "Invalid FEN", true);
       }
-      const overrides: Partial<BoardState> = {};
-      // No main game yet, so White is at the bottom unless flipped.
-      if (color === "black") overrides.flipped = true;
-      return boardResult("Board opened.", newBoard(fen ?? START_FEN, overrides));
+      // An analysis tree has no game, so White is at the bottom unless flipped.
+      const { trees, notice } = withAnalysis(analysisTree(fen ?? START_FEN, color === "black"));
+      return boardResult(notice ? `Board opened; no new tree (${MAX_TREES} open).` : "Board opened.", trees, false, notice);
     },
   );
 

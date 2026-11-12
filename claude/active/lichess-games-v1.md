@@ -71,10 +71,10 @@ through Aio64, and explain them in human language.
   finished Lichess game, not only the developer's (e.g. a Carlsen game).
   One scopeless token reads public games of every player, so several
   accounts need no switching.
-- **One token only** (developer, 2026-10-09): `cigizeta`'s scopeless
+- **One token only** (developer, 2026-10-09): the developer's scopeless
   token, used to read finished public games of any user (allowed by
-  Lichess). No token for `rotor-bot` or any other account.
-- **The developer's accounts:** `cigizeta` now, `rotor-bot` later.
+  Lichess). No token for any other account.
+- **The developer's accounts:** one now, possibly a second later.
   `LICHESS_USER` is only the token's owner, for the startup check.
 - **Finding games, later:** search tools work on any player's games; the
   player is always named in the request (no list of accounts in `.env`,
@@ -203,7 +203,7 @@ most); this tab is game-first.
   progress never appear: the server asks Lichess for finished games only.
 - Compact rows: result from the player's view, the player's color,
   opponent and rating, speed, time since the game ended, e.g.
-  `won  W  vs FosTerRon (1987)  corr  2 h ago`.
+  `won  W  vs <opponent> (1987)  corr  2 h ago`.
 - Clicking a game **joins it to the current tree** (same joining rule as
   the Explorer) and shows the **end of the game**.
 - **Main line** (developer, 2026-10-09, option 4 of the brainstorm): a

@@ -17,13 +17,25 @@ in the mobile app.
   reached.
 - **Explain**: sends the position and the analysis (at least depth 20) to
   Claude, which explains it in plain language.
-- **Your Lichess games**: the Games tab lists your last finished games; the
-  Explorer searches your own games from the position on the board, or a
-  local Polyglot opening book.
+- **Your games**: the finished games of your Lichess and Chess.com
+  accounts, kept in local databases filled by a sync you start by hand.
+  All Games lists and filters them; the Explorer shows the moves played
+  from the position on the board, with game counts and results.
+- **Master database**: optionally, the Explorer's Master source, built by
+  Aio64 from any PGN collection you choose (see below).
 
-Read-only by design: no tool writes anything anywhere, the Lichess token
-must have no scopes (the server refuses to start otherwise), and only
-finished games are analyzed.
+<table><tr><td style="border: 2px solid; padding: 8px 12px;">
+💡 <b>Tip (desktop only): click the board's expand button (the two
+diagonal arrows) once per chat.</b> The board then sits beside the chat
+and stays in view while explanations scroll by; otherwise it scrolls away
+above them. On the phone there is no room for a side pane: the board stays
+in the chat.
+</td></tr></table>
+
+Read-only by design: only the sync writes, and only to the local game
+databases (the master database is built by a command you run yourself); nothing is ever written to Lichess, Chess.com or any other
+service. No site token or password is needed (public data only), and only
+finished games are stored.
 
 ## Requirements
 
@@ -31,12 +43,14 @@ finished games are analyzed.
 - Node.js 24, pinned through [Volta](https://volta.sh) in `package.json`.
 - An [ngrok](https://ngrok.com) account; the free plan's static domain is
   enough.
-- A Lichess account and a personal API token created at
-  <https://lichess.org/account/oauth/token> with **no scopes ticked**.
-- Optional: a Polyglot opening book (`.bin`).
+- A Lichess and/or Chess.com account (its username only).
+- Optional: a PGN collection for the master database.
 
-No chess engine needs installing: the server hands Stockfish.js (npm
-package `stockfish`) to the widget.
+No chess engine needs installing: the widget loads Stockfish.js 19 lite
+(npm package `stockfish`, pinned in `package.json`) from
+[unpkg](https://unpkg.com), at exactly the installed version, and the
+browser caches it (about 2 MB the first time). If unpkg is unreachable,
+the server hands the same files to the widget, more slowly.
 
 ## Setup
 
@@ -60,8 +74,12 @@ Fill in `.env`:
 | `PUBLIC_URL` | your ngrok domain, e.g. `https://<your-domain>.ngrok-free.dev` |
 | `PORT` | local port, `8000` by default |
 | `AIO64_TOKEN` | a random secret of at least 32 characters (see below) |
-| `LICHESS_TOKEN` | the scopeless Lichess token; its owner is the player whose games are shown |
-| `POLYGLOT_PATH` | optional: path to a `.bin` book, e.g. `books/book.bin` |
+| `LICHESS_USERS` | Lichess usernames whose finished games are kept, comma-separated |
+| `CHESSCOM_USERS` | Chess.com usernames whose finished games are kept, comma-separated |
+
+At least one of `LICHESS_USERS` and `CHESSCOM_USERS` must list an
+account. Each account's finished games are kept in its own SQLite file in
+`games/`, which Git ignores; only the sync writes there.
 
 Generate `AIO64_TOKEN`:
 
@@ -69,7 +87,21 @@ Generate `AIO64_TOKEN`:
 node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"
 ```
 
-Books go in `books/`, which Git ignores, as it ignores `.env`.
+### Master database (optional)
+
+The Explorer's Master source shows, for each position up to move 20, the
+moves played in a PGN collection of your choice, with how many games
+played each and how White scored. Build it from one or more PGN files,
+plain or zstd-compressed (detected automatically, read without
+unpacking), of any size; the collection you choose is the filter:
+
+```bash
+npm run build-master -- <file.pgn>
+```
+
+It writes `games/master.sqlite`, always rebuilt from the files given
+(asking before it replaces an existing one); restart the server to use
+it. Without it, the Explorer offers only your own games.
 
 ## Run
 
@@ -82,11 +114,15 @@ npm run dev
 In another, the tunnel to it:
 
 ```bash
-ngrok http --url=<your-domain>.ngrok-free.dev 8000
+ngrok http 8000
 ```
 
-At startup the server checks the Lichess token (it must have no scopes),
-loads the book if configured, and logs one line per tool call.
+ngrok uses your account's dev domain; add `--url=<your-domain>` only if
+you have more than one.
+
+At startup the server opens each account's game database (logging how
+many games it holds) and the master database if built, and logs one line
+per tool call.
 
 ## Connect Claude
 
@@ -127,4 +163,6 @@ or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public
 License for more details: the full text is in `LICENSE`.
 
 The board widget runs Stockfish.js (Copyright (C) 2026 Chess.com, LLC,
-GPLv3), built from the Stockfish chess engine by the Stockfish team.
+GPLv3), built from the Stockfish chess engine by the Stockfish team. Its
+source: <https://github.com/nmrugg/stockfish.js>, at the version pinned
+in `package.json`.

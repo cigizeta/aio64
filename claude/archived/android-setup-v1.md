@@ -39,8 +39,8 @@ mentes/
 `composeApp/` is removed: its `Main.kt` splits into `shared`'s `App()` and
 `desktopApp`'s `main()`.
 
-Package: `io.github.cigizeta.mentes` everywhere; Android `applicationId`
-and `namespace` the same (`shared` uses `io.github.cigizeta.mentes.shared`
+Package: `io.github.<user>.mentes` everywhere; Android `applicationId`
+and `namespace` the same (`shared` uses `io.github.<user>.mentes.shared`
 as its namespace, since namespaces must be unique).
 
 ## 3. Gradle changes

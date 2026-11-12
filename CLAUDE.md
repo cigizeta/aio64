@@ -13,11 +13,19 @@ subscription pays for the conversation on Claude's side.
 
 ## Read-only, and never a cheating tool
 
-- Aio64 is read-only: no tool may change anything anywhere (no writes to
-  Lichess or any other service, no files written, no moves played). Every
-  tool carries the MCP annotation `readOnlyHint: true`.
-- External tokens get the least rights possible, and the server verifies
-  them at startup (the Lichess token must have no scopes).
+- Aio64 is read-only toward everything but its own game databases: the
+  server may hold one local database for each Lichess and Chess.com
+  username listed in `.env`, filled with that account's finished games.
+  No tool writes to Lichess, Chess.com, or any other service, writes any
+  other file, or plays a move.
+- The master database (master moves with results, for the Explorer) is
+  built from a PGN file by a command run by hand from the command line,
+  never by an MCP tool; the server only reads it.
+- Only the sync tool writes, and only to those databases; it is annotated
+  honestly (`readOnlyHint: false`, `destructiveHint: false`,
+  `idempotentHint: true`). Every other tool carries `readOnlyHint: true`.
+- Aio64 holds no Lichess or Chess.com token or password: the sync reads
+  public data by username only.
 - Games are analyzed only once finished; the server enforces this from
   the game status, never relying on Claude's judgment.
 
@@ -103,6 +111,15 @@ never PowerShell or cmd: every command in a fenced block uses Bash syntax.
 - TypeScript and every other tool are per-project dev dependencies, run
   through `npx` or npm scripts, never installed globally.
 - No Angular-like frameworks; libraries are fine.
+
+## Versioning
+
+Aio64 uses CalVer, `YYYY.M.MICRO`: year, month without a leading zero
+(npm requires valid semver, which forbids leading zeros), and a counter
+from 0 for each release in that month (`2026.11.0`, `2026.11.1`,
+`2026.12.0`). The version is written only in `package.json` (and
+`package-lock.json`, which npm keeps in step); the server and the
+widget read it from there.
 
 ## Licensing
 

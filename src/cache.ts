@@ -1,18 +1,8 @@
-import type { Game } from "./lichess.js";
-
-// In-memory caches; lost on restart, which is harmless. Nothing is ever
-// written to disk: Aio64 stays read-only.
-
-/** Bounded insertion: Map keeps insertion order, so the first key is the oldest. */
-function setBounded<K, V>(map: Map<K, V>, key: K, value: V, max: number): void {
-  map.set(key, value);
-  while (map.size > max) map.delete(map.keys().next().value!);
-}
-
-/** Finished Lichess games never change, so a reopen never calls Lichess. */
-export const games = new Map<string, Game>();
+// In-memory caches; lost on restart, which is harmless. Nothing here is
+// written to disk (only the sync writes, to the accounts' game databases).
 
 export interface GameInfo {
+  /** The game key, `<site>:<site_id>` (e.g. `lichess:q7ZvsdUF`). */
   id: string;
   white: string;
   black: string;
@@ -32,8 +22,8 @@ export interface TreeNode {
   visited?: number;
 }
 
-/** Everything a board widget needs to be rebuilt below Claude's answer. */
-export interface BoardState {
+/** One tree: a game (played or analysis) with the user's variations. */
+export interface Tree {
   rootFen: string;
   root: TreeNode;
   /** Child indexes from the root to the current node. */
@@ -42,19 +32,24 @@ export interface BoardState {
   /** The last game added from the Games tab (an ID in games): the header
    * shows its players, and the board turns to the user's side in it. */
   mainGame?: string;
-  /** Manual flip, reset whenever the main game changes. */
+  /** Manual flip. */
   flipped: boolean;
 }
 
-const states = new Map<string, BoardState>();
+export const MAX_TREES = 10;
 
-export function getState(id: string): BoardState | undefined {
-  return states.get(id);
+/** Everything a board widget needs to be rebuilt: 1 to MAX_TREES trees. */
+export interface Trees {
+  trees: Tree[];
+  /** Index of the tree shown on the board. */
+  current: number;
 }
 
-export function saveState(id: string, state: BoardState): void {
-  setBounded(states, id, state, 1000);
-}
+/**
+ * The newest widget's trees, reported by the widget itself, so that a
+ * board Claude opens next carries them over. Memory only.
+ */
+export const latest: { trees?: Trees } = {};
 
 /**
  * Only the newest board widget is usable (developer's rule); every older one

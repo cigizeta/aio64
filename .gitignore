@@ -4,6 +4,5 @@ dist/
 .env.*
 !.env.example
 *.log
-# Opening books are local only, never committed.
-books/
-*.bin
+# The accounts' game databases are local only, never committed.
+games/

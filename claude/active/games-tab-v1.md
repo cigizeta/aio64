@@ -71,7 +71,7 @@ Returns `{ games: [...] }`; read-only; hidden from Claude.
   White/Black switch move above the tabs' content area so that Explorer
   and Games share the player (the switch only affects the Explorer).
 - Opening the tab calls `recent_games` for the player; rows:
-  `won  W  vs FosTerRon (1987)  corr  2 h ago` (time since `endedAt`:
+  `won  W  vs <opponent> (1987)  corr  2 h ago` (time since `endedAt`:
   minutes, hours, "yesterday", days, then the date).
 - Clicking a row: `load_game`, `joinGame` (the joining rule as in the
   Explorer), then `makeMainLine` on the path to the game's last move, then

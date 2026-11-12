@@ -1,5 +1,7 @@
 # Main Game, Header and Flip -- Plan v1
 
+*Superseded in part, see trees-v1.md.*
+
 *Status: implemented (2026-10-09), awaiting test. Plan approved
 2026-10-09. Original status: plan, awaiting approval (2026-10-09). Designed with the
 developer one question at a time; a first version, to be judged by eye.*
@@ -36,7 +38,7 @@ board.
    line button never changes it. Without a Games-tab click, there is no
    main game.
 2. **Header.** The line above the board shows the main game's players,
-   whatever move is current: `cigizeta (1850) vs FosTerRon (1987), 1-0`
+   whatever move is current: `<your-lichess-user> (1850) vs <opponent> (1987), 1-0`
    (White first). No main game: the header is empty. The per-move labels
    ("N games through here", "Your analysis") go away.
 3. **Orientation.** Black at the bottom when the developer played Black

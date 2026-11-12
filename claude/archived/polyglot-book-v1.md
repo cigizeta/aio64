@@ -1,5 +1,8 @@
 # Polyglot Book in the Explorer -- Plan v1
 
+*Superseded, see master-db-v1.md (the Polyglot book and `src/book.ts`
+were removed).*
+
 *Status: implemented (2026-10-09), awaiting test. Plan approved
 2026-10-09. Change: `@echecs/polyglot` is not used. It only does the
 lookup, which is a few lines; the key table comes from `@echecs/zobrist`
