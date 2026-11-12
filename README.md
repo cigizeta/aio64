@@ -25,9 +25,11 @@ in the mobile app.
   Aio64 from any PGN collection you choose (see below).
 
 <table><tr><td style="border: 2px solid; padding: 8px 12px;">
-💡 <b>Tip: click the board's expand button (the two diagonal arrows) once
-per chat.</b> The board then sits beside the chat and stays in view while
-explanations scroll by; otherwise it scrolls away above them.
+💡 <b>Tip (desktop only): click the board's expand button (the two
+diagonal arrows) once per chat.</b> The board then sits beside the chat
+and stays in view while explanations scroll by; otherwise it scrolls away
+above them. On the phone there is no room for a side pane: the board stays
+in the chat.
 </td></tr></table>
 
 Read-only by design: only the sync writes, and only to the local game

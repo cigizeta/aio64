@@ -113,8 +113,9 @@ check at the end.
 
 - Trees on the phone (test 12 in trees-plan-v1.md): the selector opens
   the phone's picker; labels readable.
-- claude.ai's fullscreen control (the side pane on desktop): on the
-  phone, check whether it hides the chat.
+- claude.ai's fullscreen control: desktop only (the side pane); the
+  README's tip says so. On the phone, check what the board looks like
+  during an explanation.
 
 - Check the board widget in the Claude mobile app (server and ngrok must
   be left running). When it passes, move hello-board-spike-v1.md to
