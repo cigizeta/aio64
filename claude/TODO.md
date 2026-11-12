@@ -7,11 +7,10 @@
 - **Committed, tests 1-11 passed on desktop web (2026-11-12):** trees
   (trees-v1.md, trees-plan-v1.md): up to 10 trees in one widget, a tree
   selector, games never merged, `report_trees`; status line removed;
-  new layout. Still to do: test 12 (phone), and the "(1)" count, not
-  seen again. Likely cause: a page reload rebuilds the widget from its
-  original tool result, losing trees added in the widget, and its first
-  report then overwrites the server's trees. Needs a design decision
-  (restore from the server, or accept a fresh start).
+  new layout. The "(1)" count is explained: a page reload rebuilds the
+  widget from its original tool result, so trees added in the widget are
+  lost (and its report replaces the server's copy). Decided
+  (2026-11-12): a reload starts fresh, by design; no change.
 - **Next design:** local-games-v1.md (one SQLite file per Lichess and
   Chess.com account, manual sync, no Lichess token, no Games tab,
   Explorer sources). Open points listed there; the first is the
@@ -52,6 +51,12 @@ repository and must never be pushed here.
 
 ## Later
 
+- Arbitrary users, one day: the developer does not want the widget's
+  tab state kept on the server. Today `report_trees` keeps the newest
+  widget's trees in server memory, one copy for everyone, so a board
+  Claude opens carries them over. Rethink this before supporting other
+  users.
+
 - Change the layout of the Games tab (to be designed).
 
 - The Explorer's dot before a move (`• e4`) means "already in the current
@@ -74,6 +79,12 @@ repository and must never be pushed here.
   recheck after upgrading `@modelcontextprotocol/sdk`.
 
 ## When away from the PC
+
+Development and testing happen on desktop; the phone gets one final
+check at the end.
+
+- Trees on the phone (test 12 in trees-plan-v1.md): the selector opens
+  the phone's picker; labels readable.
 
 - Check the board widget in the Claude mobile app (server and ngrok must
   be left running). When it passes, move hello-board-spike-v1.md to

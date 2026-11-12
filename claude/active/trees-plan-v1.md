@@ -1,15 +1,16 @@
 # Trees -- Implementation Plan v1
 
 *Status: implemented and committed; tests 1-11 passed on desktop web
-(2026-11-12); test 12 (phone) not yet run.
+(2026-11-12); test 12 (phone) postponed to the final phone check.
 
 *Changes after implementation (developer, 2026-11-08): the status line
 (move and evaluation) is removed, since the evaluation repeated the first
 engine line and the last move is highlighted; messages show at the top of
 the analysis panel. Layout, top to bottom: analysis, board, tree
-selector, navigation buttons, tabs. Open question from the test: a game
-opened while another tree was open showed a count of (1); not yet
-explained.* Implements trees-v1.md
+selector, navigation buttons, tabs. A count of (1) seen during the test
+is explained: a page reload (or a server restart) rebuilds the widget
+from its original tool result, losing trees added in the widget.
+Decided (2026-11-12): a reload starts fresh, by design.* Implements trees-v1.md
 (decisions 1-12). Supersedes main-game-v1.md's Explorer rule.*
 
 ## State
