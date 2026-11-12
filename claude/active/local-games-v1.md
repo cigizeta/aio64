@@ -50,27 +50,90 @@ sites, filled by a manual sync. Games tab and Explorer read from it.
     `readOnlyHint: false`, `destructiveHint: false`,
     `idempotentHint: true`. Every other tool stays `readOnlyHint: true`.
 
+11. **Database format** (2026-11-12): see "Format" below.
+
+## Format (decided 2026-11-12)
+
+SQLite through `node:sqlite`, one file per account (decision 5). The
+tables are general: a file could hold any set of games, from either site.
+
+**`meta`** (`key`, `value`): `schema_version` (a format change rebuilds
+from `source`, without re-fetching); the account the file syncs from
+(`site`, `username`); the Lichess sync cursor (`ended_at` of the newest
+stored game).
+
+**`archives`** (Chess.com only): `month` (`2026-11`), `etag`,
+`last_modified`, `complete` (set once the month is over and fully
+fetched; never fetched again).
+
+**`games`**:
+
+| Column | Content |
+|---|---|
+| `id` | Aio64's own key, `INTEGER PRIMARY KEY` |
+| `site`, `site_id` | `lichess` / `chesscom` and the site's game ID; `UNIQUE (site, site_id)` |
+| `white`, `black` | names as the site gives them, `COLLATE NOCASE` (usernames are ASCII and case-insensitive on both sites); `Anonymous` for a Lichess player without an account |
+| `white_rating`, `black_rating` | as each site gives them, no adjustment (Chess.com's may be after the game); NULL if absent |
+| `result` | `1-0`, `0-1`, `1/2-1/2` |
+| `termination` | normalized, see below |
+| `time_control` | `180+2` (seconds), `3d` (days per move), `-` (unlimited); no category stored |
+| `rated` | 1 rated, 0 casual |
+| `started_at`, `ended_at` | Unix milliseconds; the widget shows them in UTC. A PGN export writes `Date`/`UTCTime` from the start and custom `EndDate`/`EndTime` from the end, as Chess.com does |
+| `initial_fen` | NULL for the standard start; set for games from a position |
+| `moves` | SAN, space-separated, rewritten by chessops while replaying (disambiguation only when needed, standard `+`, `#`, `=Q`, `O-O`); a game with an illegal move is rejected |
+| `source` | the site's original reply (PGN or JSON), verbatim |
+
+No `color` (derived by matching names to `.env` usernames, ignoring
+case), no `clocks` (not wanted), no `eco`/`opening` (to be computed
+from positions, later).
+
+**`positions`** (the Explorer's index, every ply): `hash` (64-bit
+Zobrist), `game_id` (refers to `games.id`), `ply`, `next` (SAN, NULL
+at the game's end); primary key `(hash, game_id, ply)`, `WITHOUT ROWID`.
+About 80 rows per game, roughly 30 MB per 10,000 games. The Explorer
+groups by `next`.
+
+**Which games:** any finished game (status checked per game, never
+assumed), any time control including daily and correspondence. Standard
+chess only, including games from a position (Lichess `standard` and
+`fromPosition`; Chess.com `rules: chess`, with or without
+`initial_setup`). Chess960 and other variants are skipped; aborted games
+are not stored.
+
+**Termination values:**
+
+| Value | Lichess `status` | Chess.com result |
+|---|---|---|
+| `checkmate` | `mate` | `checkmated` |
+| `resignation` | `resign` | `resigned` |
+| `time` | `outoftime` | `timeout` |
+| `abandonment` | `timeout` (opponent left, win claimed) | `abandoned` |
+| `stalemate` | `stalemate` | `stalemate` |
+| `agreement` | inferred, see below | `agreed` |
+| `repetition` | inferred | `repetition` |
+| `fifty-move` | inferred | `50move` |
+| `insufficient` | inferred | `insufficient` |
+| `time-insufficient` | `outoftime` with a draw | `timevsinsufficient` |
+| `other` | `cheat`, `unknownFinish` | anything else |
+
+Lichess reports most draws as `draw`; the sync infers the kind from the
+final position, in order: insufficient material; the final position
+occurred three times (pieces, side to move, castling, en passant);
+100 plies without a capture or pawn move; otherwise `agreement`.
+
 ## Open
 
 1. **Sync confirmation.** claude.ai may ask for confirmation when a
    non-read-only tool runs, even one called from the widget: to check.
-2. **Finished games only.** Both sites' archives hold finished games;
-   the sync still checks each game's status before storing it.
-3. **Storage details.** SQLite, one file per account (decided 5), through
-   `node:sqlite` (built into Node, no dependency; check its stability
-   flag in the pinned Node 24). Location: an ignored directory in the
-   repository, like `books/`. File naming (site and username, e.g.
-   `lichess-<user>.sqlite`). Queries across accounts (Games list,
-   Explorer) open each file, or `ATTACH` them to one connection.
-4. **Explorer index.** Positions indexed by Zobrist hash
-   (`@echecs/zobrist`, already a dependency), per account, both colors
-   (decision 7). Replaces the Lichess player explorer (whose access
-   without login is uncertain anyway). Index all plies or only the
-   opening (first N)?
-5. **What a game record keeps.** Site, ID, players, ratings, color of the
-   configured player, result and how it ended (resignation, time, mate:
-   the postponed TODO item), time control, date, opening, moves, clocks
-   (for the Explain context and a future game review).
+2. (Settled: finished games only, see "Format".)
+3. **Storage details.** `node:sqlite`: check its stability flag in the
+   pinned Node 24. Location: an ignored directory in the repository,
+   like `books/`. File naming (site and username, e.g.
+   `lichess-<user>.sqlite`). Queries across accounts open each file, or
+   `ATTACH` them to one connection.
+4. (Settled: every ply, Zobrist hash via `@echecs/zobrist`, already a
+   dependency; replaces the Lichess player explorer.)
+5. (Settled: see "Format".)
 6. **Chess.com details to verify** against its current API documentation:
    delay between a game's end and its appearance in the monthly archive;
    rate limits (sequential requests); required headers. Any `User-Agent`

@@ -21,7 +21,7 @@
 
 ## Next
 
-- More context for Explain (side played, clocks, move history): needs
+- More context for Explain (side played, move history): needs
   design (lichess-games-v1.md).
 - Move finished docs from `claude/active/` to `claude/done/`
   (cdn-engine-spike-v1.md and cdn-engine-v1.md: tested on desktop;
@@ -50,6 +50,10 @@ repository and must never be pushed here.
   user runs their own server with their own `AIO64_TOKEN`.
 
 ## Later
+
+- Explorer: show the current position's opening name, looked up by
+  position in Lichess's openings list (CC0). Nothing stored; a game
+  column can be added later from the stored moves, without a re-sync.
 
 - Arbitrary users, one day: the developer does not want the widget's
   tab state kept on the server. Today `report_trees` keeps the newest
