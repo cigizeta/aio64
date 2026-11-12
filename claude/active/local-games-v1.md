@@ -44,14 +44,16 @@ sites, filled by a manual sync. Games tab and Explorer read from it.
    A master database with W/D/L is to be built in a separate project;
    Aio64 accepts the limitation until then.
 
+10. **Read-only rule softened** (2026-11-12, now in CLAUDE.md): the
+    server may hold one database for each Lichess and Chess.com username
+    in `.env`; only the sync tool writes, and only there, annotated
+    `readOnlyHint: false`, `destructiveHint: false`,
+    `idempotentHint: true`. Every other tool stays `readOnlyHint: true`.
+
 ## Open
 
-1. **Read-only rule (CLAUDE.md).** Proposed wording: "No tool changes
-   anything outside Aio64's local game database; only the sync tool
-   writes there." The sync tool is annotated honestly
-   (`readOnlyHint: false`, `destructiveHint: false`,
-   `idempotentHint: true`); every other tool stays `readOnlyHint: true`.
-   claude.ai may ask for confirmation when it runs: to check.
+1. **Sync confirmation.** claude.ai may ask for confirmation when a
+   non-read-only tool runs, even one called from the widget: to check.
 2. **Finished games only.** Both sites' archives hold finished games;
    the sync still checks each game's status before storing it.
 3. **Storage details.** SQLite, one file per account (decided 5), through

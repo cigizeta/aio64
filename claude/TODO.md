@@ -13,8 +13,8 @@
   (2026-11-12): a reload starts fresh, by design; no change.
 - **Next design:** local-games-v1.md (one SQLite file per Lichess and
   Chess.com account, manual sync, no Lichess token, no Games tab,
-  Explorer sources). Open points listed there; the first is the
-  read-only rule change in CLAUDE.md.
+  Explorer sources). Open points listed there; the read-only rule is
+  already softened in CLAUDE.md (2026-11-12).
 - **Project split:** Aio64 analyzes the developer's games with Claude;
   Mentes becomes a database app; a master database with W/D/L is
   planned in a separate project.

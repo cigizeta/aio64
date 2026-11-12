@@ -13,9 +13,14 @@ subscription pays for the conversation on Claude's side.
 
 ## Read-only, and never a cheating tool
 
-- Aio64 is read-only: no tool may change anything anywhere (no writes to
-  Lichess or any other service, no files written, no moves played). Every
-  tool carries the MCP annotation `readOnlyHint: true`.
+- Aio64 is read-only toward everything but its own game databases: the
+  server may hold one local database for each Lichess and Chess.com
+  username listed in `.env`, filled with that account's finished games.
+  No tool writes to Lichess, Chess.com, or any other service, writes any
+  other file, or plays a move.
+- Only the sync tool writes, and only to those databases; it is annotated
+  honestly (`readOnlyHint: false`, `destructiveHint: false`,
+  `idempotentHint: true`). Every other tool carries `readOnlyHint: true`.
 - External tokens get the least rights possible, and the server verifies
   them at startup (the Lichess token must have no scopes).
 - Games are analyzed only once finished; the server enforces this from
