@@ -1,6 +1,17 @@
 # Local Games -- Implementation Plan v1
 
-*Status: plan (2026-11-12), not started. Implements local-games-v1.md
+*Status: phase 1 implemented (2026-11-12); tests 1-5 passed: typecheck
+clean; first sync of one Lichess and one Chess.com account in about
+20 s (37 and 2,990 games, 0 rejected; 217 Chess.com games skipped as
+non-`chess` rules); Lichess returned an ongoing game without a token
+(open point 7 confirmed) and kept it pending; a second sync fetched
+nothing (Chess.com months `304`); a sync interrupted after six months
+resumed at the seventh and ended with the same 2,990 games. Test 6
+passed: Chess.com's archive has `rated` (2,960 rated, 30 casual);
+terminations consistent with results, none `other`; daily games stored
+(`1d`, `3d`); disambiguation only when needed (`Nge7`, `Rfxd8`,
+`Rac1`). No thematic game in the data yet, so that path is untested.
+Phase 1 complete. Implements local-games-v1.md
 (decisions 1-11 and the settled open points).*
 
 Three phases, each ending in a working server and its own commit:

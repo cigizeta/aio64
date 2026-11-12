@@ -64,7 +64,13 @@ Fill in `.env`:
 | `PORT` | local port, `8000` by default |
 | `AIO64_TOKEN` | a random secret of at least 32 characters (see below) |
 | `LICHESS_TOKEN` | the scopeless Lichess token; its owner is the player whose games are shown |
+| `LICHESS_USERS` | Lichess usernames whose finished games are kept, comma-separated |
+| `CHESSCOM_USERS` | Chess.com usernames whose finished games are kept, comma-separated |
 | `POLYGLOT_PATH` | optional: path to a `.bin` book, e.g. `books/book.bin` |
+
+At least one of `LICHESS_USERS` and `CHESSCOM_USERS` must list an
+account. Each account's finished games are kept in its own SQLite file in
+`games/`, which Git ignores; only the sync writes there.
 
 Generate `AIO64_TOKEN`:
 

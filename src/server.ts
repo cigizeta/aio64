@@ -27,6 +27,7 @@ import {
   viewers,
 } from "./cache.js";
 import { checkLichessToken, fetchGame, type Game, GameError, parseGameId, recentGames } from "./lichess.js";
+import { type Account, accountDb, accountsFromEnv, startSync, syncStatus } from "./sync.js";
 
 // All analysis runs in the widget: Stockfish.js lite single-threaded
 // (WebAssembly). The widget loads it from unpkg; these MCP resources, read
@@ -76,6 +77,26 @@ if (!lichessToken) {
 const lichessUser = await checkLichessToken(lichessToken);
 console.log(`Lichess token verified: ${lichessUser}, no scopes`);
 
+// The accounts whose finished games the server keeps, one SQLite file each.
+let accounts: Account[];
+try {
+  accounts = accountsFromEnv();
+} catch (error) {
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exit(1);
+}
+if (accounts.length === 0) {
+  console.error("No accounts: set LICHESS_USERS and/or CHESSCOM_USERS (see .env.example)");
+  process.exit(1);
+}
+for (const account of accounts) {
+  const db = accountDb(account);
+  console.log(`Games of ${db.label}: ${db.countGames()} stored`);
+}
+// Temporary, for testing the sync before the widget has its button; to be
+// removed then, since a sync is otherwise only ever started by hand.
+if (process.env.SYNC_ON_START === "1") startSync(accounts);
+
 const book = loadBook(process.env.POLYGLOT_PATH);
 console.log(book ? `Polyglot book loaded: ${book.entries} entries` : "No POLYGLOT_PATH: book disabled");
 
@@ -89,7 +110,8 @@ function textResult(text: string, isError = false) {
   return { isError, content: [{ type: "text" as const, text }] };
 }
 
-// Aio64 never changes anything anywhere; every tool says so to the client.
+// Every tool but sync_games changes nothing anywhere and says so to the
+// client; sync_games writes only to the accounts' own game databases.
 const READ_ONLY = { readOnlyHint: true };
 
 const fenInput = { fen: z.string().describe("FEN of the position") };
@@ -329,6 +351,42 @@ function buildMcpServer(): McpServer {
       if (typeof parsed === "string") return textResult(parsed, true);
       latest.trees = parsed;
       return textResult("reported");
+    },
+  );
+
+  // Starts a sync of every account in the background and returns at once;
+  // the widget then polls sync_status. The only tool that writes: the
+  // accounts' game databases, nothing else. Hidden from Claude.
+  registerAppTool(
+    server,
+    "sync_games",
+    {
+      description: "Start syncing every account's finished games into the local databases.",
+      inputSchema: {},
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+      _meta: { ui: { resourceUri: BOARD_URI, visibility: ["app"] } },
+    },
+    async () => {
+      const outcome = startSync(accounts);
+      note(outcome);
+      return { ...textResult(outcome), structuredContent: { outcome } };
+    },
+  );
+
+  // The running or last sync: progress line and per-account summary.
+  // Server memory only; hidden from Claude.
+  registerAppTool(
+    server,
+    "sync_status",
+    {
+      description: "The current or last sync's progress and summary.",
+      inputSchema: {},
+      annotations: READ_ONLY,
+      _meta: { ui: { resourceUri: BOARD_URI, visibility: ["app"] } },
+    },
+    async () => {
+      const status = { ...syncStatus, summary: [...syncStatus.summary] };
+      return { ...textResult(status.running ? status.progress : "idle"), structuredContent: status };
     },
   );
 
