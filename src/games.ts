@@ -100,10 +100,11 @@ export interface ExplorerMove {
   uci: string;
   /** Games that played this move from the position. */
   games: number;
-  /** Their results from the account's side, whatever its color. */
-  wins: number;
+  /** Their results from White's side, as on Lichess and Chess.com:
+   * White won, drawn, Black won. */
+  white: number;
   draws: number;
-  losses: number;
+  black: number;
 }
 
 export interface Exploration {
@@ -124,18 +125,16 @@ export function explore(dbs: AccountDb[], fen: string): Exploration {
   let total = 0;
   let games: ListedGame[] = [];
   for (const db of dbs) {
-    // The account played Black when Black's name is its username (the
-    // column ignores case); a win is then 0-1, else 1-0.
+    // Results from White's side, whoever the account played.
     const moves = db.db
       .prepare(
         `SELECT p.next, count(DISTINCT p.game_id) AS n,
-           count(DISTINCT CASE WHEN (g.result = '1-0' AND g.black <> ?1) OR (g.result = '0-1' AND g.black = ?1)
-             THEN p.game_id END) AS w,
+           count(DISTINCT CASE WHEN g.result = '1-0' THEN p.game_id END) AS w,
            count(DISTINCT CASE WHEN g.result = '1/2-1/2' THEN p.game_id END) AS d
          FROM positions p JOIN games g ON g.id = p.game_id
-         WHERE p.hash = ?2 AND p.next IS NOT NULL GROUP BY p.next`,
+         WHERE p.hash = ? AND p.next IS NOT NULL GROUP BY p.next`,
       )
-      .all(db.username, hash) as { next: string; n: number; w: number; d: number }[];
+      .all(hash) as { next: string; n: number; w: number; d: number }[];
     for (const { next, n, w, d } of moves) {
       const sum = counts.get(next) ?? { n: 0, w: 0, d: 0 };
       counts.set(next, { n: sum.n + Number(n), w: sum.w + Number(w), d: sum.d + Number(d) });
@@ -159,7 +158,7 @@ export function explore(dbs: AccountDb[], fen: string): Exploration {
   const moves: ExplorerMove[] = [];
   for (const [san, { n, w, d }] of counts) {
     const move = pos?.isOk ? parseSan(pos.value, san) : undefined;
-    if (move) moves.push({ san, uci: makeUci(move), games: n, wins: w, draws: d, losses: n - w - d });
+    if (move) moves.push({ san, uci: makeUci(move), games: n, white: w, draws: d, black: n - w - d });
   }
   moves.sort((a, b) => b.games - a.games);
   return { moves, games, total };

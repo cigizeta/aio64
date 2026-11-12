@@ -613,23 +613,23 @@ interface ExplorerMove {
   uci: string;
   san: string;
   games: number;
-  /** From the account's side, whatever its color. */
-  wins: number;
+  /** From White's side, as on Lichess and Chess.com. */
+  white: number;
   draws: number;
-  losses: number;
+  black: number;
 }
 
 /**
- * A move's results as a bar: won, drawn, lost, each as wide as its share.
- * A share too narrow for its label shows no label.
+ * A move's results as a bar: White won, drawn, Black won, each as wide as
+ * its share. A share too narrow for its label shows no label.
  */
 function resultBar(m: ExplorerMove): HTMLSpanElement {
   const bar = document.createElement("span");
   bar.className = "bar";
   for (const [count, className] of [
-    [m.wins, "won"],
-    [m.draws, "drawn"],
-    [m.losses, "lost"],
+    [m.white, "white"],
+    [m.draws, "draw"],
+    [m.black, "black"],
   ] as const) {
     if (!count) continue;
     const percent = (100 * count) / m.games;
@@ -639,7 +639,7 @@ function resultBar(m: ExplorerMove): HTMLSpanElement {
     if (percent >= 15) part.textContent = `${Math.round(percent)}%`;
     bar.append(part);
   }
-  bar.title = `won ${m.wins}, drawn ${m.draws}, lost ${m.losses}`;
+  bar.title = `White won ${m.white}, drawn ${m.draws}, Black won ${m.black}`;
   return bar;
 }
 

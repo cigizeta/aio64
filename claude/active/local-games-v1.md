@@ -26,7 +26,9 @@ sites, filled by a manual sync. Games tab and Explorer read from it.
    complete locally, with `If-Modified-Since` / ETag.
 4. **Not a Mentes database.** Only the configured players' own online
    games; no imports, no PGN collections, no editing. Game storage in
-   general stays Mentes's job.
+   general stays Mentes's job. One exception (2026-11-12): the master
+   database, built from a PGN file by a command-line command in this
+   repository (master-db-v1.md).
 5. **One SQLite database per account** (2026-11-08): one file for each
    Lichess username and each Chess.com username in `.env`. Adding or
    removing an account adds or deletes one file; a sync of one account
@@ -43,18 +45,19 @@ sites, filled by a manual sync. Games tab and Explorer read from it.
    speed (bullet, blitz, rapid, classical, daily, derived from
    `time_control`), rated or casual, date range (`ended_at`), standard
    or thematic (`initial_fen` set).
-7. **Explorer sources** (revised 2026-11-12): two, the master book (the
-   local Polyglot book) and personal games (every account combined,
-   counts added up). Personal games shows games of both colors.
+7. **Explorer sources** (revised 2026-11-12): two, Master (the master
+   database, master-db-v1.md; the Polyglot book is dropped) and personal
+   games (every account combined, counts added up). Personal games shows
+   games of both colors.
 8. **Results for personal games** (revised 2026-11-12; the 2026-11-08
    decision showed plain counts only): each move shows its game count,
-   right-aligned, and a won / drawn / lost bar, from the account's side
-   whatever its color (so mixing colors stays meaningful). No
-   performance rating.
+   right-aligned, and a results bar always from White's side (White won,
+   drawn, Black won), as on Lichess and Chess.com, in personal games and
+   the master database alike. No performance rating.
 9. **No master statistics for now.** The book (Polyglot) holds only
    moves and weights, never results, so its percentages are preferences.
-   A master database with W/D/L is to be built in a separate project;
-   Aio64 accepts the limitation until then.
+   Superseded in part (2026-11-12): master statistics come from a master
+   database built by Aio64 from PGN, see master-db-v1.md.
 
 10. **Read-only rule softened** (2026-11-12, now in CLAUDE.md): the
     server may hold one database for each Lichess and Chess.com username

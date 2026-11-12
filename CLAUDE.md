@@ -18,6 +18,9 @@ subscription pays for the conversation on Claude's side.
   username listed in `.env`, filled with that account's finished games.
   No tool writes to Lichess, Chess.com, or any other service, writes any
   other file, or plays a move.
+- The master database (master moves with results, for the Explorer) is
+  built from a PGN file by a command run by hand from the command line,
+  never by an MCP tool; the server only reads it.
 - Only the sync tool writes, and only to those databases; it is annotated
   honestly (`readOnlyHint: false`, `destructiveHint: false`,
   `idempotentHint: true`). Every other tool carries `readOnlyHint: true`.

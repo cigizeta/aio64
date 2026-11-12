@@ -248,8 +248,9 @@
         font-variant-numeric: tabular-nums;
         color: var(--muted);
       }
-      /* A move's results: won (light), drawn (grey), lost (dark), each as
-         wide as its share; the same in light and dark mode, like a board. */
+      /* A move's results from White's side: White won (light), drawn
+         (grey), Black won (dark), each as wide as its share; the same in
+         light and dark mode, like a board. */
       .rows .bar {
         flex: 1;
         display: flex;
@@ -267,15 +268,15 @@
         white-space: nowrap;
         text-align: center;
       }
-      .rows .bar .won {
+      .rows .bar .white {
         background: #f2f2f2;
         color: #333;
       }
-      .rows .bar .drawn {
+      .rows .bar .draw {
         background: #8c8c8c;
         color: #fff;
       }
-      .rows .bar .lost {
+      .rows .bar .black {
         background: #3a3a3a;
         color: #eee;
       }
