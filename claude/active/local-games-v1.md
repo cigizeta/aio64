@@ -1,7 +1,7 @@
 # Local Games -- Design Discussion v1
 
-*Status: discussion (2026-11-08), nothing decided beyond the list below,
-nothing implemented.*
+*Status: design complete (2026-11-12); implementation plan in
+local-games-plan-v1.md; nothing implemented.*
 
 ## Goal
 
@@ -204,8 +204,9 @@ occurred three times (pieces, side to move, castling, en passant);
    position.
 10. Settled (2026-11-12): `recent_games` goes (All Games reads the
     database, decision 6);
-    `explore_position` reads the selected account's `positions`;
-    `load_game` reads only the database, by `games.id`, never a site.
+    `explore_position` reads every account's `positions` (decision 7);
+    `load_game` reads only the databases, by game key
+    (`<site>:<site_id>`, see local-games-plan-v1.md), never a site.
     The server contacts Lichess and Chess.com only during a sync.
 11. Settled (2026-11-12): the All Games tab (decision 6), not a toggle
     in the Explorer; the Explorer follows the position only.
