@@ -1,12 +1,6 @@
 // In-memory caches; lost on restart, which is harmless. Nothing here is
 // written to disk (only the sync writes, to the accounts' game databases).
 
-/** Bounded insertion: Map keeps insertion order, so the first key is the oldest. */
-function setBounded<K, V>(map: Map<K, V>, key: K, value: V, max: number): void {
-  map.set(key, value);
-  while (map.size > max) map.delete(map.keys().next().value!);
-}
-
 export interface GameInfo {
   /** The game key, `<site>:<site_id>` (e.g. `lichess:q7ZvsdUF`). */
   id: string;
@@ -49,16 +43,6 @@ export interface Trees {
   trees: Tree[];
   /** Index of the tree shown on the board. */
   current: number;
-}
-
-const states = new Map<string, Trees>();
-
-export function getState(id: string): Trees | undefined {
-  return states.get(id);
-}
-
-export function saveState(id: string, state: Trees): void {
-  setBounded(states, id, state, 1000);
 }
 
 /**

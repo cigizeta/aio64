@@ -25,7 +25,8 @@ own fullscreen control (the diagonal arrows), so it was removed: the
 developer clicks the arrows once per chat. The Explain button stays as the
 way to explain, and the README tells users to click the arrows. The
 `explain` prompt (the + menu) and `reopen` were removed (2026-11-12).
-Cleanup still to do: `save_board` and `state`.*
+Then `save_board`, `open_board`'s `state`, the saved-state cache and
+the widget's `updateModelContext` were removed too: the idea is closed.*
 
 ## Problem
 

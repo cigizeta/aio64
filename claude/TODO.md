@@ -69,9 +69,8 @@ repository and must never be pushed here.
   developer's message box and the reply drew the board below. Recheck
   after upgrading `@modelcontextprotocol/ext-apps` (a way to fill the
   message box without sending, or widgets drawn in app-started turns).
-  Meanwhile unused by the widget: `save_board`, `open_board`'s `state`
-  input and the saved-state cache in `src/cache.ts`; remove them (a tool
-  change: reconnect) or keep them for that recheck.
+  `save_board`, `open_board`'s `state` and the saved-state cache were
+  removed (2026-11-12); bring them back only if that recheck succeeds.
 
 
 - Master database with games (developer to rethink, 2026-11-12). Today

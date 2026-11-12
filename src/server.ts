@@ -14,7 +14,7 @@ import { z } from "zod";
 import { checkHash } from "./hash.js";
 import { Master } from "./master.js";
 import { logCall, logLine, note, withNote } from "./log.js";
-import { type Tree, type TreeNode, type Trees, MAX_TREES, getState, latest, saveState, viewers } from "./cache.js";
+import { type Tree, type TreeNode, type Trees, MAX_TREES, latest, viewers } from "./cache.js";
 import { explore, listGames, loadGame } from "./games.js";
 import { type Account, accountDb, accountsFromEnv, startSync, syncStatus } from "./sync.js";
 
@@ -281,32 +281,9 @@ function buildMcpServer(): McpServer {
     },
   );
 
-  // Explain stores the widget state here so that Claude reopens the board
-  // below its answer with a short ID instead of the whole state. Memory
-  // only; hidden from Claude's tool list.
-  registerAppTool(
-    server,
-    "save_board",
-    {
-      description: "Store a board widget's state; returns a short ID.",
-      // The tree is recursive, so it travels as a JSON string and is
-      // validated here, rather than as a recursive tool input schema.
-      inputSchema: { state: z.string().max(1_000_000) },
-      annotations: READ_ONLY,
-      _meta: { ui: { resourceUri: BOARD_URI, visibility: ["app"] } },
-    },
-    async ({ state }) => {
-      const parsed = parseTrees(state);
-      if (typeof parsed === "string") return textResult(parsed, true);
-      const id = randomUUID().slice(0, 8);
-      saveState(id, parsed);
-      return { ...textResult(id), structuredContent: { id } };
-    },
-  );
-
   // The newest widget reports its trees here (debounced), so that a board
   // Claude opens next carries them over. Reports from superseded widgets
-  // are ignored. Server memory only, so read-only like save_board; hidden
+  // are ignored. Server memory only, so read-only; hidden
   // from Claude's tool list.
   registerAppTool(
     server,
@@ -466,19 +443,11 @@ function buildMcpServer(): McpServer {
       inputSchema: {
         fen: z.string().optional().describe("Position to show"),
         color: z.enum(["white", "black"]).optional().describe("Side at the bottom"),
-        state: z.string().optional().describe("Saved board ID, to reopen"),
       },
       annotations: READ_ONLY,
       _meta: { ui: { resourceUri: BOARD_URI } },
     },
-    async ({ fen, color, state }) => {
-      if (state) {
-        const saved = getState(state);
-        if (saved) return boardResult("Board reopened.", saved);
-        const fallback = withAnalysis(analysisTree(START_FEN));
-        return boardResult("Saved board not found; opened at the start.", fallback.trees, false, fallback.notice);
-      }
-
+    async ({ fen, color }) => {
       if (fen) {
         const check = validateFen(fen);
         if (!check.ok) return textResult(check.error ?? "Invalid FEN", true);

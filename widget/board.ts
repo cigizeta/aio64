@@ -349,7 +349,6 @@ function setPath(path: number[]): void {
   render();
   scheduleExplore();
   reportTrees();
-  scheduleContext();
   if (!stale) analyzePosition(currentStep().fen);
 }
 
@@ -477,7 +476,6 @@ function onAnalysis(fen: string, analysis: Analysis): void {
   }
   if (state && positionKey(currentStep().fen) === key) {
     renderAnalysis(best);
-    scheduleContext();
     // explain_position: propose the Explain prompt once, at depth 20.
     if (ready && proposeOnce && !stale) {
       proposeOnce = false;
@@ -488,37 +486,6 @@ function onAnalysis(fen: string, analysis: Analysis): void {
 
 /** Set by explain_position's board: fill the Explain prompt by itself. */
 let proposeOnce = false;
-// The model context: the position on the board and its analysis, given to
-// Claude with updateModelContext, which starts no reply; claude.ai attaches
-// the latest update to the user's next message. The `explain` prompt (the
-// + menu) relies on it: started by the user, its reply is their own turn,
-// in which claude.ai draws the board reopened below the answer. Debounced:
-// stepping quickly or a fast-deepening search sends one update.
-let contextTimer: ReturnType<typeof setTimeout> | undefined;
-
-function scheduleContext(): void {
-  clearTimeout(contextTimer);
-  if (stale) return;
-  contextTimer = setTimeout(() => void sendContext(), 1000);
-}
-
-async function sendContext(): Promise<void> {
-  if (!state || stale) return;
-  const step = currentStep();
-  const analysis = explained.get(positionKey(step.fen));
-  const game = mainLabel();
-  const text = [
-    `Aio64 board: ${game ? `${game}, ` : "analysis, "}${step.label === "Start" ? "start position" : `after ${step.label}`}.`,
-    `FEN: ${step.fen}`,
-    analysis ? analysisText(analysis) : "Stockfish: no analysis yet.",
-  ].join("\n");
-  try {
-    await app.updateModelContext({ content: [{ type: "text", text }] });
-  } catch {
-    // A host without model context: the explain prompt then lacks the
-    // position, and the Explain button still works.
-  }
-}
 
 /** The position's analysis at EXPLAIN_DEPTH or deeper, waiting if needed. */
 function analysisForExplain(fen: string): Promise<Analysis> {
