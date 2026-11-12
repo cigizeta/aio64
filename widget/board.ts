@@ -715,7 +715,8 @@ function clock(timeControl: string): string {
 
 /**
  * A listed game, on two lines so that it fits the widget's width: color,
- * opponent and result above; date (UTC), site and clock below, smaller.
+ * opponent and result above; date (UTC), site and account, and clock
+ * below, smaller.
  */
 function gameRow(g: ListedGame, onClick: () => void): HTMLLIElement {
   const li = document.createElement("li");
@@ -736,7 +737,10 @@ function gameRow(g: ListedGame, onClick: () => void): HTMLLIElement {
       [`${g.opponent}${g.opponentRating ? ` (${g.opponentRating})` : ""}`, "grow"],
       [RESULTS[g.result], "result"],
     ]),
-    line([[`${new Date(g.endedAt).toISOString().slice(0, 10)} · ${SITES[g.site]} · ${clock(g.timeControl)}`, "muted"]]),
+    // The account, not just its site: there may be several on one site.
+    line([
+      [`${new Date(g.endedAt).toISOString().slice(0, 10)} · ${SITES[g.site]} ${g.account} · ${clock(g.timeControl)}`, "muted"],
+    ]),
   );
   li.addEventListener("click", onClick);
   return li;
