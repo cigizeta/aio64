@@ -5,9 +5,12 @@ vulnerabilities; typecheck clean, the `z.record` line the only break).
 Side effect: the widget grew from 371 kB to 559 kB (gzip 97 to 145 kB),
 since ext-apps imports `zod/v4`, now the full Zod 4.6.7 instead of Zod
 3.25's early copy; the vite build also prints two harmless Rollup
-warnings about `@__PURE__` comments in Zod's code. Accepted if the
-widget still loads (test 3); worth rechecking on the phone. Tests 3-5
-to do.
+warnings about `@__PURE__` comments in Zod's code. Accepted: the widget
+loads; worth rechecking on the phone. Tests 3-5 passed (2026-11-12,
+desktop): every remaining tool used during the day's sessions. Not
+tested, since removed the same day: `save_board`, `open_board`'s
+`state`; `viewer_status` only matters across chats (claude.ai keeps one
+board per chat).
 
 Test 3 found a regression: after Explain, the board reopened with
 `open_board` and `state` ran ("Board reopened.") but claude.ai drew no

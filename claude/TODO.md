@@ -23,14 +23,6 @@
 
 ## Next
 
-- Zod 4 (audit, 2026-11-12: GHSA-mrhx-c7xc-m3w5, high, memory exhaustion
-  validating oversized constrained collections; fixed only in zod 4.6.6+,
-  a major upgrade). Low exposure: only claude.ai calls the tools, after
-  the `AIO64_TOKEN` check, and the largest input (a tree state) is
-  capped at 1 MB as a string before Zod sees it. To plan: the MCP SDK
-  version that supports Zod 4; schema changes (e.g. `z.record` needs two
-  arguments in Zod 4); test every tool.
-
 - More context for Explain (side played, move history): needs
   design (lichess-games-v1.md).
 - Move finished docs from `claude/active/` to `claude/done/`
