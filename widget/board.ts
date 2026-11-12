@@ -582,7 +582,7 @@ function updatePlayerControls(): void {
   explorerSource.hidden = tab !== "explorer";
   sourceBook.hidden = !hasBook;
   sourceBook.classList.toggle("active", source === "book");
-  asSide.textContent = "Personal games";
+  asSide.textContent = "Personal";
   asSide.classList.toggle("active", source === "games");
 }
 

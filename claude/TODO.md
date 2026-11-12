@@ -13,8 +13,10 @@
   (2026-11-12): a reload starts fresh, by design; no change.
 - **Next design:** local-games-v1.md (one SQLite file per Lichess and
   Chess.com account, manual sync, no Lichess token, no Games tab,
-  Explorer sources): design complete (2026-11-12); plan in
-  local-games-plan-v1.md, to review, then implement in three phases.
+  Explorer sources): phases 1-2 implemented (2026-11-12), phase 3 (the
+  widget's tabs) next. Then the master database (master-db-v1.md,
+  master-db-plan-v1.md): built by Aio64 from PGN, replacing the Polyglot
+  book in the Explorer.
 - **Project split:** Aio64 analyzes the developer's games with Claude;
   Mentes becomes a database app; a master database with W/D/L is
   planned in a separate project.

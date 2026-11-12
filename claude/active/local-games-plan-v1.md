@@ -198,10 +198,10 @@ tool call waits for it.
 ### Tabs (`widget/board.html`, `widget/board.ts`)
 
 - **PGN:** today's Moves tab renamed (label, IDs, comments).
-- **Explorer:** source toggle with two values, "Master book" (shown
-  only when a book is configured) and "Personal games"; plain counts
-  (`Nf3 · 12`); the game list below the moves, as today. The `as-side`
-  toggle goes.
+- **Explorer:** already reworked in phase 2 (Personal with count and
+  results bar, the game list below). Its sources are left as they are
+  (Local book and Personal) until master-db-plan-v1.md replaces the
+  book with the master database.
 - **All Games:** replaces Games.
   - Filter row: account (select), opponent (text, applied after a
     short pause in typing), color, result, termination, speed, rated,
@@ -233,8 +233,7 @@ tool call waits for it.
 5. Each filter alone narrows the list as expected; filters combine.
 6. A thematic game is found with the standard/thematic filter and
    opens at its own start position.
-7. Explorer sources switch; Master book hidden without a book.
-8. Trees from earlier (trees-plan-v1.md tests 3-5) still work with game
+7. Trees from earlier (trees-plan-v1.md tests 3-5) still work with game
    keys.
 
 ## Files

@@ -58,9 +58,9 @@ any PGN collection, with no other tool.
    build). No games stored, so the master source shows moves with
    counts and the results bar but no game list, as Polyglot today.
 
-9. **Explorer sources** (2026-11-12): two buttons, **Master** (shown
-   only when `games/master.sqlite` exists) and **Personal games**; one
-   at a time; a new widget starts on Personal games. Supersedes
+9. **Explorer sources** (2026-11-12): two buttons, labelled **Master**
+   (shown only when `games/master.sqlite` exists) and **Personal**; one
+   at a time; a new widget starts on Personal. Supersedes
    local-games-v1.md decision 7's "master book".
 
 ## Open
