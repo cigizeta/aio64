@@ -26,8 +26,8 @@
 - Move finished docs from `claude/active/` to `claude/done/`
   (cdn-engine-spike-v1.md and cdn-engine-v1.md: tested on desktop;
   gemini-cdn-engine.md and gemini-parallel-depth-calls.md go to
-  `archived/`; trees-v1.md and trees-plan-v1.md once tested;
-  main-game-v1.md gets a "superseded in part, see trees-v1.md" note).
+  `archived/`; main-game-v1.md gets a "superseded in part, see
+  trees-v1.md" note).
 
 ## Public repository
 
