@@ -107,6 +107,10 @@ repository and must never be pushed here.
   continue (comment mid-line, mark, status line, or nothing). How a game
   ended (Lichess `status`) is not kept by the server today.
 
+- Board beside the chat automatically: today the user clicks claude.ai's
+  fullscreen arrows once per chat (explain-command-v1.md). After each
+  ext-apps upgrade, check for a way to start a board in fullscreen.
+
 - claude.ai first calls `server/discover` (a newer MCP discovery method);
   our SDK answers 400 and claude.ai falls back to `initialize`. Harmless;
   recheck after upgrading `@modelcontextprotocol/sdk`.
@@ -118,6 +122,8 @@ check at the end.
 
 - Trees on the phone (test 12 in trees-plan-v1.md): the selector opens
   the phone's picker; labels readable.
+- claude.ai's fullscreen control (the side pane on desktop): on the
+  phone, check whether it hides the chat.
 
 - Check the board widget in the Claude mobile app (server and ngrok must
   be left running). When it passes, move hello-board-spike-v1.md to

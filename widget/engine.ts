@@ -205,6 +205,10 @@ export function stopEngine(): void {
   worker?.terminate();
   worker = undefined;
   ready = false;
+  // The terminated worker never answers a pending stop, so a restarted
+  // engine must not wait for its bestmove.
+  searching = false;
+  stopping = false;
 }
 
 export function engineFailure(): string | undefined {

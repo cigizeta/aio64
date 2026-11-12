@@ -349,6 +349,7 @@ function setPath(path: number[]): void {
   render();
   scheduleExplore();
   reportTrees();
+  scheduleContext();
   if (!stale) analyzePosition(currentStep().fen);
 }
 
@@ -476,6 +477,7 @@ function onAnalysis(fen: string, analysis: Analysis): void {
   }
   if (state && positionKey(currentStep().fen) === key) {
     renderAnalysis(best);
+    scheduleContext();
     // explain_position: propose the Explain prompt once, at depth 20.
     if (ready && proposeOnce && !stale) {
       proposeOnce = false;
@@ -486,6 +488,37 @@ function onAnalysis(fen: string, analysis: Analysis): void {
 
 /** Set by explain_position's board: fill the Explain prompt by itself. */
 let proposeOnce = false;
+// The model context: the position on the board and its analysis, given to
+// Claude with updateModelContext, which starts no reply; claude.ai attaches
+// the latest update to the user's next message. The `explain` prompt (the
+// + menu) relies on it: started by the user, its reply is their own turn,
+// in which claude.ai draws the board reopened below the answer. Debounced:
+// stepping quickly or a fast-deepening search sends one update.
+let contextTimer: ReturnType<typeof setTimeout> | undefined;
+
+function scheduleContext(): void {
+  clearTimeout(contextTimer);
+  if (stale) return;
+  contextTimer = setTimeout(() => void sendContext(), 1000);
+}
+
+async function sendContext(): Promise<void> {
+  if (!state || stale) return;
+  const step = currentStep();
+  const analysis = explained.get(positionKey(step.fen));
+  const game = mainLabel();
+  const text = [
+    `Aio64 board: ${game ? `${game}, ` : "analysis, "}${step.label === "Start" ? "start position" : `after ${step.label}`}.`,
+    `FEN: ${step.fen}`,
+    analysis ? analysisText(analysis) : "Stockfish: no analysis yet.",
+  ].join("\n");
+  try {
+    await app.updateModelContext({ content: [{ type: "text", text }] });
+  } catch {
+    // A host without model context: the explain prompt then lacks the
+    // position, and the Explain button still works.
+  }
+}
 
 /** The position's analysis at EXPLAIN_DEPTH or deeper, waiting if needed. */
 function analysisForExplain(fen: string): Promise<Analysis> {
@@ -560,18 +593,14 @@ async function explain(): Promise<void> {
     busy = false;
     render();
 
-    // No board is reopened. claude.ai now sends this message itself and
-    // runs the reply as a turn started by the app, in which it draws no
-    // widget (tested 2026-11-12, with Zod 3 and 4 alike); a reopened board
-    // would still supersede this one, collapsing it to "Continued below"
-    // over nothing. This board stays live above the answer instead, and
-    // Claude is told not to open another.
+    // Only the position: claude.ai keeps one board per chat, and this one
+    // stays live (beside the chat once the user clicks its fullscreen
+    // control), so the message says nothing about boards.
     const game = mainLabel();
     const lines = [
       `Explain this position (${game ? `${game}, ` : ""}after ${step.label}).`,
       `FEN: ${step.fen}`,
       text,
-      "The board stays open above: do not open another one.",
     ];
     await app.sendMessage({ role: "user", content: [{ type: "text", text: lines.join("\n") }] });
   } catch (error) {
@@ -1127,16 +1156,70 @@ new IntersectionObserver((entries) => {
   if (entries.some((e) => e.isIntersecting) && Date.now() - lastCheck > 2000) void stillNewest();
 }).observe(document.body);
 
+// claude.ai keeps one board per chat and sends each later open_board result
+// to it (observed 2026-11-12), instead of drawing a new board. A board
+// that receives a result is therefore the newest again: it expands if a
+// newer viewer ID had collapsed it, and takes the result's ID.
 app.ontoolresult = (result) => {
   const payload = (result.structuredContent ?? {}) as BoardPayload;
-  if (payload.trees?.trees.length) openBoard({ ...payload, trees: payload.trees });
+  if (!payload.trees?.trees.length) return;
+  if (stale) expand();
+  openBoard({ ...payload, trees: payload.trees });
 };
 
-await app.connect();
-void startEngine(app, {
-  analysis: onAnalysis,
-  status: (text) => {
-    engineStatus = text;
-    if (state) render();
-  },
+function runEngine(): void {
+  void startEngine(app, {
+    analysis: onAnalysis,
+    status: (text) => {
+      engineStatus = text;
+      if (state) render();
+    },
+  });
+}
+
+// Picture-in-picture: the board floats over the chat, so it stays in view
+// while the explanation scrolls. Offered only when claude.ai lists "pip"
+// among the display modes it supports; until then the button stays hidden.
+const floatButton = byId<HTMLButtonElement>("float");
+let floating = false;
+
+function updateFloat(): void {
+  const context = app.getHostContext();
+  const modes = context?.availableDisplayModes ?? [];
+  floating = context?.displayMode === "pip";
+  floatButton.hidden = !modes.includes("pip");
+  floatButton.textContent = floating ? "Dock" : "Float";
+}
+
+floatButton.addEventListener("click", async () => {
+  try {
+    const result = await app.requestDisplayMode({ mode: floating ? "inline" : "pip" });
+    floating = result.mode === "pip";
+    floatButton.textContent = floating ? "Dock" : "Float";
+  } catch {
+    // The host refused: the board stays where it is.
+  }
 });
+
+app.addEventListener("hostcontextchanged", () => {
+  updateFloat();
+});
+
+// No button to move the board beside the chat: claude.ai's own fullscreen
+// control (the diagonal arrows) already puts it in the side pane, and
+// claude.ai refuses to do so automatically (an automatic request got
+// "kept inline", tested 2026-11-12).
+
+/** Undoes collapse(): the board shows again and analyzes again. */
+function expand(): void {
+  stale = false;
+  collapsed.hidden = true;
+  for (const part of viewerParts) part.hidden = false;
+  // The tabs decide which panels and bars show.
+  showTab(tab);
+  runEngine();
+}
+
+await app.connect();
+updateFloat();
+runEngine();

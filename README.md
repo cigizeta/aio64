@@ -17,6 +17,10 @@ in the mobile app.
   reached.
 - **Explain**: sends the position and the analysis (at least depth 20) to
   Claude, which explains it in plain language.
+
+  Tip: click the board's expand button in claude.ai (the two diagonal
+  arrows) once per chat. The board then sits beside the chat and stays in
+  view while explanations scroll by; otherwise it scrolls away above them.
 - **Your games**: the finished games of your Lichess and Chess.com
   accounts, kept in local databases filled by a sync you start by hand.
   All Games lists and filters them; the Explorer shows the moves played
