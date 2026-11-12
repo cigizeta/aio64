@@ -186,9 +186,10 @@ occurred three times (pieces, side to move, castling, en passant);
    - The export in step (1) returns ongoing games with their (delayed)
      moves too; the sync discards everything of them but the ID, and
      nothing of an ongoing game reaches Claude or the widget.
-   - Whether ongoing games are visible without a token is to be checked
-     once in a browser before implementing; if not, this point reopens
-     (a time window was rejected: it can miss long games).
+   - Checked 2026-11-12: a request for another account's ongoing games
+     (not the requester's own) lists them, so they are visible to
+     non-owners. To confirm with the server's anonymous requests when
+     implementing. (A time window was rejected: it can miss long games.)
 8. Settled (2026-11-12): each batch (a Lichess page, a Chess.com month)
    is written in one transaction together with its cursor, so a failure
    loses at most that batch and the next press resumes. No rebuild
