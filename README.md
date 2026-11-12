@@ -17,16 +17,18 @@ in the mobile app.
   reached.
 - **Explain**: sends the position and the analysis (at least depth 20) to
   Claude, which explains it in plain language.
-
-  Tip: click the board's expand button in claude.ai (the two diagonal
-  arrows) once per chat. The board then sits beside the chat and stays in
-  view while explanations scroll by; otherwise it scrolls away above them.
 - **Your games**: the finished games of your Lichess and Chess.com
   accounts, kept in local databases filled by a sync you start by hand.
   All Games lists and filters them; the Explorer shows the moves played
   from the position on the board, with game counts and results.
 - **Master database**: optionally, the Explorer's Master source, built by
   Aio64 from any PGN collection you choose (see below).
+
+<table><tr><td style="border: 2px solid; padding: 8px 12px;">
+💡 <b>Tip: click the board's expand button (the two diagonal arrows) once
+per chat.</b> The board then sits beside the chat and stays in view while
+explanations scroll by; otherwise it scrolls away above them.
+</td></tr></table>
 
 Read-only by design: only the sync writes, and only to the local game
 databases (the master database is built by a command you run yourself); nothing is ever written to Lichess, Chess.com or any other
