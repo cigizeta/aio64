@@ -7,6 +7,7 @@
   "scripts": {
     "build:widget": "vite build",
     "dev": "npm run build:widget && tsx --env-file=.env src/server.ts",
+    "build-master": "tsx src/build-master.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

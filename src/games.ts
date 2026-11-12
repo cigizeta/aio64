@@ -2,7 +2,7 @@ import { Chess } from "chessops/chess";
 import { INITIAL_FEN, parseFen } from "chessops/fen";
 import { parseSan } from "chessops/san";
 import { makeUci } from "chessops/util";
-import { polyglotKey } from "./book.js";
+import { storedHash } from "./hash.js";
 import type { GameInfo } from "./cache.js";
 import type { AccountDb } from "./db.js";
 import type { Site } from "./record.js";
@@ -119,8 +119,7 @@ const MAX_GAMES = 50;
 
 /** Moves and games from a position, over every account (both colors). */
 export function explore(dbs: AccountDb[], fen: string): Exploration {
-  // The same hash as the stored positions (see record.ts).
-  const hash = BigInt.asIntN(64, polyglotKey(fen));
+  const hash = storedHash(fen);
   const counts = new Map<string, { n: number; w: number; d: number }>();
   let total = 0;
   let games: ListedGame[] = [];
@@ -151,17 +150,27 @@ export function explore(dbs: AccountDb[], fen: string): Exploration {
     games.push(...rows.map((row) => listed(db, row)));
   }
   games = games.sort(newestFirst).slice(0, MAX_GAMES);
+  const moves = withUci(
+    fen,
+    [...counts].map(([san, { n, w, d }]) => ({ san, games: n, white: w, draws: d, black: n - w - d })),
+  );
+  return { moves, games, total };
+}
 
-  // The widget plays a clicked move from its squares.
+/**
+ * Adds each move's UCI (the widget plays a clicked move from its squares)
+ * and sorts by games played, most first. A move illegal in the position
+ * (a hash collision) is dropped.
+ */
+export function withUci(fen: string, moves: Omit<ExplorerMove, "uci">[]): ExplorerMove[] {
   const setup = parseFen(fen);
   const pos = setup.isOk ? Chess.fromSetup(setup.value) : undefined;
-  const moves: ExplorerMove[] = [];
-  for (const [san, { n, w, d }] of counts) {
-    const move = pos?.isOk ? parseSan(pos.value, san) : undefined;
-    if (move) moves.push({ san, uci: makeUci(move), games: n, white: w, draws: d, black: n - w - d });
+  const result: ExplorerMove[] = [];
+  for (const m of moves) {
+    const move = pos?.isOk ? parseSan(pos.value, m.san) : undefined;
+    if (move) result.push({ ...m, uci: makeUci(move) });
   }
-  moves.sort((a, b) => b.games - a.games);
-  return { moves, games, total };
+  return result.sort((a, b) => b.games - a.games);
 }
 
 /** All Games' filters; each one left out means "any". */

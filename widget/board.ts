@@ -54,8 +54,8 @@ interface BoardPayload {
   propose?: boolean;
   /** Shown in the status line, e.g. when no tree could be added. */
   notice?: string;
-  /** Whether the server has a Polyglot book (the Explorer's Book source). */
-  book?: boolean;
+  /** Whether the master database exists (the Explorer's Master source). */
+  master?: boolean;
   /** The configured accounts' usernames: the board turns to their side. */
   users?: string[];
 }
@@ -118,8 +118,8 @@ const explorerStatus = byId("explorer-status");
 const explorerMoves = byId("explorer-moves");
 const explorerGames = byId("explorer-games");
 const explorerSource = byId("explorer-source");
-const sourceBook = byId<HTMLButtonElement>("source-book");
-const bookMoves = byId("book-moves");
+const sourceMaster = byId<HTMLButtonElement>("source-master");
+const masterMoves = byId("master-moves");
 const buttons = {
   first: byId<HTMLButtonElement>("first"),
   back: byId<HTMLButtonElement>("back"),
@@ -408,9 +408,9 @@ function openBoard(payload: BoardPayload & { trees: Trees }): void {
   state = trees.trees[trees.current];
   viewerId = payload.viewerId;
   proposeOnce = Boolean(payload.propose);
-  hasBook = Boolean(payload.book);
+  hasMaster = Boolean(payload.master);
   users = new Set((payload.users ?? []).map((name) => name.toLowerCase()));
-  setSource(hasBook ? source : "games");
+  setSource(source);
   setPath(state.path);
   // After setPath, which clears the notice.
   if (payload.notice) {
@@ -608,13 +608,13 @@ buttons.mainline.addEventListener("click", () => {
 type Tab = "moves" | "explorer" | "games";
 let tab: Tab = "moves";
 
-// On the Explorer only, two buttons: Local (the book, when there is one)
-// and the personal games (every account, both colors).
+// On the Explorer only, two buttons, always shown: Master (the master
+// database; a message when it has not been built) and Personal (every
+// account, both colors).
 function updatePlayerControls(): void {
   if (stale) return;
   explorerSource.hidden = tab !== "explorer";
-  sourceBook.hidden = !hasBook;
-  sourceBook.classList.toggle("active", source === "book");
+  sourceMaster.classList.toggle("active", source === "master");
   asSide.textContent = "Personal";
   asSide.classList.toggle("active", source === "games");
 }
@@ -759,69 +759,78 @@ function row(cells: [string, string][], onClick: () => void): HTMLLIElement {
 
 const RESULTS = { win: "win", draw: "draw", loss: "loss" };
 
-// Explorer source: the personal games (every account) or Local (the
-// server's Polyglot book, offered only when one is configured). A new
-// widget starts on the user's games.
-let hasBook = false;
-let source: "games" | "book" = "games";
+// Explorer source: Personal (every account) or Master (the master
+// database). A new widget starts on Personal.
+let hasMaster = false;
+let source: "games" | "master" = "games";
 
-function setSource(next: "games" | "book"): void {
+function setSource(next: "games" | "master"): void {
   source = next;
-  bookMoves.hidden = source !== "book";
+  masterMoves.hidden = source !== "master";
   explorerMoves.hidden = explorerGames.hidden = source !== "games";
   updatePlayerControls();
   scheduleExplore();
 }
-sourceBook.addEventListener("click", () => setSource("book"));
+sourceMaster.addEventListener("click", () => setSource("master"));
 
-interface BookMove {
-  san: string;
-  uci: string;
-  percent: number;
+/**
+ * One row per move, most played first: the move (a dot when it is already
+ * in the tree here), its game count and its results bar. A click plays it.
+ */
+function moveRows(moves: ExplorerMove[], step: Step): HTMLLIElement[] {
+  const inTree = new Set(step.node.children.map((c) => c.san));
+  return moves.map((m) => {
+    const li = row(
+      [
+        [`${inTree.has(m.san) ? "• " : ""}${m.san}`, "main"],
+        [String(m.games), "count"],
+      ],
+      () => playMove(m.uci.slice(0, 2), m.uci.slice(2, 4), PROMOTIONS[m.uci[4] as keyof typeof PROMOTIONS]),
+    );
+    li.append(resultBar(m));
+    return li;
+  });
 }
 
-// The book never changes while the server runs, so answers are kept for
-// the widget's lifetime.
-const bookCache = new Map<string, BookMove[]>();
+// The master database never changes while the server runs, so answers are
+// kept for the widget's lifetime.
+const masterCache = new Map<string, ExplorerMove[]>();
 
-async function exploreBook(request: number): Promise<void> {
+async function exploreMaster(request: number): Promise<void> {
+  if (!hasMaster) {
+    explorerStatus.textContent = "No Master database available";
+    explorerStatus.classList.add("centered");
+    masterMoves.replaceChildren();
+    return;
+  }
   const step = currentStep();
   const key = positionKey(step.fen);
-  let moves = bookCache.get(key);
+  let moves = masterCache.get(key);
   if (!moves) {
-    const result = await app.callServerTool({ name: "book_moves", arguments: { fen: step.fen } });
+    const result = await app.callServerTool({ name: "master_moves", arguments: { fen: step.fen } });
     if (request !== exploreRequest) return;
     if (result.isError) {
       explorerStatus.textContent = textOf(result);
-      bookMoves.replaceChildren();
+      masterMoves.replaceChildren();
       return;
     }
-    moves = ((result.structuredContent ?? {}) as { moves?: BookMove[] }).moves ?? [];
-    bookCache.set(key, moves);
+    moves = ((result.structuredContent ?? {}) as { moves?: ExplorerMove[] }).moves ?? [];
+    masterCache.set(key, moves);
   }
-  explorerStatus.textContent = moves.length ? "" : "Out of book";
-  const inTree = new Set(step.node.children.map((c) => c.san));
-  bookMoves.replaceChildren(
-    ...moves.map((m) =>
-      row(
-        [
-          [`${inTree.has(m.san) ? "• " : ""}${m.san}`, "main"],
-          [`${m.percent}%`, "grow"],
-        ],
-        () => playMove(m.uci.slice(0, 2), m.uci.slice(2, 4), PROMOTIONS[m.uci[4] as keyof typeof PROMOTIONS]),
-      ),
-    ),
-  );
+  const total = moves.reduce((sum, m) => sum + m.games, 0);
+  explorerStatus.textContent = total ? `${total} games from here` : "Not in the master database";
+  masterMoves.replaceChildren(...moveRows(moves, step));
 }
 
 async function explore(): Promise<void> {
   if (!state || stale) return;
   const request = ++exploreRequest;
-  if (source === "book") {
+  explorerStatus.classList.remove("centered");
+  if (source === "master") {
     try {
-      await exploreBook(request);
+      await exploreMaster(request);
     } catch (error) {
-      if (request === exploreRequest) explorerStatus.textContent = error instanceof Error ? error.message : "Book failed";
+      if (request === exploreRequest) explorerStatus.textContent = error instanceof Error ? error.message : "Search failed";
     }
     return;
   }
@@ -842,22 +851,7 @@ async function explore(): Promise<void> {
     explorerStatus.textContent =
       total > games.length ? `${total} games from here; the last ${games.length} below` : `${total} games from here`;
 
-    // Moves already in the tree at this node are marked with a dot; each
-    // move shows how many games played it and their results.
-    const inTree = new Set(step.node.children.map((c) => c.san));
-    explorerMoves.replaceChildren(
-      ...moves.map((m) => {
-        const li = row(
-          [
-            [`${inTree.has(m.san) ? "• " : ""}${m.san}`, "main"],
-            [String(m.games), "count"],
-          ],
-          () => playMove(m.uci.slice(0, 2), m.uci.slice(2, 4), PROMOTIONS[m.uci[4] as keyof typeof PROMOTIONS]),
-        );
-        li.append(resultBar(m));
-        return li;
-      }),
-    );
+    explorerMoves.replaceChildren(...moveRows(moves, step));
     explorerGames.replaceChildren(...games.map((g) => gameRow(g, () => void addGame(g.key, step.fen, "explorer"))));
   } catch (error) {
     if (request === exploreRequest) explorerStatus.textContent = error instanceof Error ? error.message : "Search failed";

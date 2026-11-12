@@ -13,7 +13,7 @@ process.emitWarning = ((warning: string | Error, ...rest: unknown[]) => {
   if (text.includes("SQLite")) return;
   (emitWarning as (...args: unknown[]) => void)(warning, ...rest);
 }) as typeof process.emitWarning;
-const { DatabaseSync } = createRequire(import.meta.url)("node:sqlite") as typeof import("node:sqlite");
+export const { DatabaseSync } = createRequire(import.meta.url)("node:sqlite") as typeof import("node:sqlite");
 
 /**
  * One SQLite file per configured account, in games/ (ignored by Git). The
@@ -21,7 +21,7 @@ const { DatabaseSync } = createRequire(import.meta.url)("node:sqlite") as typeof
  * general: a file could hold any finished games, from either site.
  */
 
-const DIRECTORY = new URL("../games/", import.meta.url);
+export const DIRECTORY = new URL("../games/", import.meta.url);
 
 /** Bumped when the format changes: games and positions are then rebuilt
  * from each game's stored source, without contacting any site. */

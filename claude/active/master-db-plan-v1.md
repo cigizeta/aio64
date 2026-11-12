@@ -1,6 +1,9 @@
 # Master Database -- Implementation Plan v1
 
-*Status: plan (2026-11-12), not started. Implements master-db-v1.md
+*Status: implemented (2026-11-12); test 6 passed (no master database:
+the Master button shows "No Master database available", centered);
+tests 1-5 and 7 to do. Deviation: the PGN
+is read in place (e.g. from Google Drive), not copied first (developer). Implements master-db-v1.md
 (decisions 1-9). Comes after local-games-plan-v1.md phase 3, so that
 the Explorer's sources change once.*
 
@@ -75,8 +78,9 @@ the Explorer's sources change once.*
 
 ## Widget
 
-- Explorer sources: two buttons, **Master** (hidden without the file)
-  and **Personal**; a new widget starts on Personal.
+- Explorer sources: two buttons, **Master** and **Personal**, always
+  shown; a new widget starts on Personal. Without the file, Master shows
+  "No Master database available", centered.
 - Master: the moves with count and results bar, as Personal, but no
   game list (no games stored); status "N games from here" from the
   totals, or "Not in the master database" when the position has none.
@@ -102,7 +106,8 @@ the Explorer's sources change once.*
    Master at the start position: moves, counts and bars plausible
    (1. e4 and 1. d4 on top); deep in a line beyond ply 40: "Not in the
    master database".
-6. Without `games/master.sqlite`: no Master button; Personal works.
+6. Without `games/master.sqlite`: Master still shown; clicked, it shows
+   "No Master database available", centered; Personal works.
 7. A position where a transposition joins two move orders: the counts
    include both (one hash).
 

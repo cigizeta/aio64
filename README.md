@@ -19,11 +19,13 @@ in the mobile app.
   Claude, which explains it in plain language.
 - **Your games**: the finished games of your Lichess and Chess.com
   accounts, kept in local databases filled by a sync you start by hand.
-  The Games tab lists them; the Explorer searches them from the position
-  on the board, or a local Polyglot opening book.
+  All Games lists and filters them; the Explorer shows the moves played
+  from the position on the board, with game counts and results.
+- **Master database**: optionally, the Explorer's Master source, built by
+  Aio64 from any PGN collection you choose (see below).
 
 Read-only by design: only the sync writes, and only to the local game
-databases; nothing is ever written to Lichess, Chess.com or any other
+databases (the master database is built by a command you run yourself); nothing is ever written to Lichess, Chess.com or any other
 service. No site token or password is needed (public data only), and only
 finished games are stored.
 
@@ -34,7 +36,7 @@ finished games are stored.
 - An [ngrok](https://ngrok.com) account; the free plan's static domain is
   enough.
 - A Lichess and/or Chess.com account (its username only).
-- Optional: a Polyglot opening book (`.bin`).
+- Optional: a PGN collection for the master database.
 
 No chess engine needs installing: the widget loads Stockfish.js 19 lite
 (npm package `stockfish`, pinned in `package.json`) from
@@ -66,7 +68,6 @@ Fill in `.env`:
 | `AIO64_TOKEN` | a random secret of at least 32 characters (see below) |
 | `LICHESS_USERS` | Lichess usernames whose finished games are kept, comma-separated |
 | `CHESSCOM_USERS` | Chess.com usernames whose finished games are kept, comma-separated |
-| `POLYGLOT_PATH` | optional: path to a `.bin` book, e.g. `books/book.bin` |
 
 At least one of `LICHESS_USERS` and `CHESSCOM_USERS` must list an
 account. Each account's finished games are kept in its own SQLite file in
@@ -78,7 +79,20 @@ Generate `AIO64_TOKEN`:
 node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"
 ```
 
-Books go in `books/`, which Git ignores, as it ignores `.env`.
+### Master database (optional)
+
+The Explorer's Master source shows, for each position up to move 20, the
+moves played in a PGN collection of your choice, with how many games
+played each and how White scored. Build it from one or more PGN files
+(any size; the collection you choose is the filter):
+
+```bash
+npm run build-master -- <file.pgn>
+```
+
+It writes `games/master.sqlite`, always rebuilt from the files given
+(asking before it replaces an existing one); restart the server to use
+it. Without it, the Explorer offers only your own games.
 
 ## Run
 
@@ -98,8 +112,8 @@ ngrok uses your account's dev domain; add `--url=<your-domain>` only if
 you have more than one.
 
 At startup the server opens each account's game database (logging how
-many games it holds), loads the book if configured, and logs one line per
-tool call.
+many games it holds) and the master database if built, and logs one line
+per tool call.
 
 ## Connect Claude
 

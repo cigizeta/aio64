@@ -1,5 +1,6 @@
 import type { AccountDb } from "./db.js";
 import { checkResponse, type SyncCounts, SyncError, USER_AGENT } from "./http.js";
+import { pgnMoves, pgnTags } from "./pgn.js";
 import { type GameRecord, isStandardStart, type Parsed, replay, type Termination } from "./record.js";
 
 /**
@@ -50,26 +51,6 @@ const TERMINATIONS: Record<string, Termination> = {
   insufficient: "insufficient",
   timevsinsufficient: "time-insufficient",
 };
-
-/** The PGN's tag values, by name. */
-function pgnTags(pgn: string): Map<string, string> {
-  const tags = new Map<string, string>();
-  for (const match of pgn.matchAll(/^\[(\w+)\s+"((?:[^"\\]|\\.)*)"\]\s*$/gm)) tags.set(match[1], match[2]);
-  return tags;
-}
-
-/** The PGN's moves as SAN: tags, comments, move numbers and result removed. */
-function pgnMoves(pgn: string): string[] {
-  const body = pgn
-    .replace(/^\[.*\]\s*$/gm, "")
-    .replace(/\{[^}]*\}/g, " ")
-    .replace(/\([^)]*\)/g, " ")
-    .replace(/\$\d+/g, " ");
-  return body
-    .split(/\s+/)
-    .map((token) => token.replace(/^\d+\.(\.\.)?/, ""))
-    .filter((token) => token && !/^(1-0|0-1|1\/2-1\/2|\*)$/.test(token));
-}
 
 /** `180+2`, `600+0`, `3d` (daily: seconds per move as days), or `-`. */
 function timeControl(value: string | undefined): string {

@@ -6,6 +6,3 @@ dist/
 *.log
 # The accounts' game databases are local only, never committed.
 games/
-# Opening books are local only, never committed.
-books/
-*.bin

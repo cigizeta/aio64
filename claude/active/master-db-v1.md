@@ -59,8 +59,9 @@ any PGN collection, with no other tool.
    counts and the results bar but no game list, as Polyglot today.
 
 9. **Explorer sources** (2026-11-12): two buttons, labelled **Master**
-   (shown only when `games/master.sqlite` exists) and **Personal**; one
-   at a time; a new widget starts on Personal. Supersedes
+   and **Personal**, always shown; one at a time; a new widget starts on
+   Personal. Without `games/master.sqlite`, Master shows "No Master
+   database available", centered in the panel. Supersedes
    local-games-v1.md decision 7's "master book".
 
 ## Open

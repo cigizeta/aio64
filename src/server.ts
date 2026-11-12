@@ -11,7 +11,8 @@ import {
 } from "@modelcontextprotocol/ext-apps/server";
 import { validateFen } from "chess.js";
 import { z } from "zod";
-import { loadBook } from "./book.js";
+import { checkHash } from "./hash.js";
+import { Master } from "./master.js";
 import { logCall, logLine, note, withNote } from "./log.js";
 import { type Tree, type TreeNode, type Trees, MAX_TREES, getState, latest, saveState, viewers } from "./cache.js";
 import { explore, listGames, loadGame } from "./games.js";
@@ -56,6 +57,10 @@ try {
   process.exit(1);
 }
 
+// Every database indexes positions by this hash: a wrong one would make
+// every lookup silently miss.
+checkHash();
+
 // The accounts whose finished games the server keeps, one SQLite file each.
 // Public data only: no site token is ever held.
 let accounts: Account[];
@@ -74,8 +79,9 @@ for (const db of dbs) console.log(`Games of ${db.label}: ${db.countGames()} stor
 // The widget turns the board to the side these players had in a game.
 const usernames = accounts.map((account) => account.username);
 
-const book = loadBook(process.env.POLYGLOT_PATH);
-console.log(book ? `Polyglot book loaded: ${book.entries} entries` : "No POLYGLOT_PATH: book disabled");
+// The master database, if built (npm run build-master); read-only.
+const master = Master.open();
+console.log(master ? `Master database: ${master.games} games` : "No master database (npm run build-master)");
 
 // claude.ai caches widget HTML by URI, so a fixed URI keeps serving a stale
 // widget after a rebuild. A content hash in the URI makes every build new.
@@ -132,7 +138,7 @@ function boardResult(text: string, trees: Trees, propose = false, notice?: strin
   latest.trees = trees;
   return {
     ...textResult(text),
-    structuredContent: { trees, viewerId, propose, notice, book: Boolean(book), users: usernames },
+    structuredContent: { trees, viewerId, propose, notice, master: Boolean(master), users: usernames },
   };
 }
 
@@ -372,15 +378,15 @@ function buildMcpServer(): McpServer {
     },
   );
 
-  // The Explorer's Book source: the local Polyglot book's moves, with
-  // their share of the book's weight. Registered only when a book is
-  // configured; hidden from Claude.
-  if (book) {
+  // The Explorer's Master source: the master database's moves, with their
+  // counts and results from White's side. Registered only when the
+  // database has been built; hidden from Claude.
+  if (master) {
     registerAppTool(
       server,
-      "book_moves",
+      "master_moves",
       {
-        description: "The opening book's moves from a position.",
+        description: "The master database's moves from a position.",
         inputSchema: fenInput,
         annotations: READ_ONLY,
         _meta: { ui: { resourceUri: BOARD_URI, visibility: ["app"] } },
@@ -388,8 +394,8 @@ function buildMcpServer(): McpServer {
       async ({ fen }) => {
         const check = validateFen(fen);
         if (!check.ok) return textResult(check.error ?? "Invalid FEN", true);
-        const moves = book.moves(fen);
-        return { ...textResult(`${moves.length} book moves`), structuredContent: { moves } };
+        const moves = master.moves(fen);
+        return { ...textResult(`${moves.length} master moves`), structuredContent: { moves } };
       },
     );
   }

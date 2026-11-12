@@ -1,7 +1,7 @@
 import { Chess } from "chessops/chess";
 import { INITIAL_FEN, makeFen, parseFen } from "chessops/fen";
 import { makeSanAndPlay, parseSan } from "chessops/san";
-import { polyglotKey } from "./book.js";
+import { storedHash } from "./hash.js";
 
 /**
  * One finished game as stored in an account's database, whichever site it
@@ -80,8 +80,7 @@ export function replay(initialFen: string | undefined, sans: string[]): Replayed
   if (created.isErr) throw new Error(`impossible position ${initialFen}`);
   const pos = created.value;
 
-  // Hashes are stored as SQLite's signed 64-bit INTEGER.
-  const hashOf = () => BigInt.asIntN(64, polyglotKey(makeFen(pos.toSetup())));
+  const hashOf = () => storedHash(makeFen(pos.toSetup()));
   const positions: { hash: bigint; next?: string }[] = [{ hash: hashOf() }];
   const moves: string[] = [];
   for (const san of sans) {

@@ -270,6 +270,13 @@
         display: block;
         margin: 6px auto;
       }
+      /* A message that stands alone in the panel, such as a missing master
+         database. */
+      #explorer-status.centered {
+        margin-top: 60px;
+        text-align: center;
+        font-size: 14px;
+      }
       #explorer-status,
       #games-status {
         margin: 6px 0 2px;
@@ -410,7 +417,7 @@
         <button id="tab-games" class="tab">All Games</button>
       </div>
       <div id="explorer-source" hidden>
-        <button id="source-book" class="toggle" title="Explorer: the local opening book">Local</button>
+        <button id="source-master" class="toggle" title="Explorer: the master database">Master</button>
         <button id="as-side" class="toggle" title="Explorer: every account's games"></button>
       </div>
       <!-- All Games: the filters (folded by default) and the sync button. -->
@@ -482,7 +489,7 @@
       <section id="moves"></section>
       <section id="explorer" hidden>
         <div id="explorer-status"></div>
-        <ul id="book-moves" class="rows" hidden></ul>
+        <ul id="master-moves" class="rows" hidden></ul>
         <ul id="explorer-moves" class="rows"></ul>
         <ul id="explorer-games" class="rows"></ul>
       </section>
