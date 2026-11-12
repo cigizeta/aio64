@@ -61,6 +61,19 @@ repository and must never be pushed here.
 
 ## Later
 
+- Explain no longer reopens the board below the answer (2026-11-12).
+  claude.ai now sends the widget's message itself, as a turn "started by
+  a message from the app", and draws no widget in it: `open_board` ran
+  ("Board reopened.") with nothing shown, with Zod 3 and Zod 4 alike, so
+  not our regression. Until 2026-11-12 morning the message filled the
+  developer's message box and the reply drew the board below. Recheck
+  after upgrading `@modelcontextprotocol/ext-apps` (a way to fill the
+  message box without sending, or widgets drawn in app-started turns).
+  Meanwhile unused by the widget: `save_board`, `open_board`'s `state`
+  input and the saved-state cache in `src/cache.ts`; remove them (a tool
+  change: reconnect) or keep them for that recheck.
+
+
 - Master database with games (developer to rethink, 2026-11-12). Today
   totals only: 864k games, 331 MB, 8 min. Estimates for 864k games:
   (A) games + index every ply, 3-4 GB, about an hour; (B) games + index

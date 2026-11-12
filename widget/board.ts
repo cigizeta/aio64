@@ -540,9 +540,8 @@ function analysisText(analysis: Analysis): string {
 }
 
 // Explain: the position's browser analysis, at least depth 20 (waiting if
-// needed, deeper if already computed); saves all the trees, then fills the
-// chat message so that Claude explains it in English and reopens the board
-// below its answer with the saved state.
+// needed, deeper if already computed), then sends the chat message so that
+// Claude explains it in English below this board, which stays live.
 async function explain(): Promise<void> {
   if (!state || !(await stillNewest())) return;
   const step = currentStep();
@@ -561,12 +560,19 @@ async function explain(): Promise<void> {
     busy = false;
     render();
 
-    const saved = await app.callServerTool({ name: "save_board", arguments: { state: JSON.stringify(trees) } });
-    const stateId = saved.isError ? undefined : (saved.structuredContent as { id?: string } | undefined)?.id;
-
+    // No board is reopened. claude.ai now sends this message itself and
+    // runs the reply as a turn started by the app, in which it draws no
+    // widget (tested 2026-11-12, with Zod 3 and 4 alike); a reopened board
+    // would still supersede this one, collapsing it to "Continued below"
+    // over nothing. This board stays live above the answer instead, and
+    // Claude is told not to open another.
     const game = mainLabel();
-    const lines = [`Explain this position (${game ? `${game}, ` : ""}after ${step.label}).`, `FEN: ${step.fen}`, text];
-    if (stateId) lines.push(`After explaining, call open_board with state "${stateId}".`);
+    const lines = [
+      `Explain this position (${game ? `${game}, ` : ""}after ${step.label}).`,
+      `FEN: ${step.fen}`,
+      text,
+      "The board stays open above: do not open another one.",
+    ];
     await app.sendMessage({ role: "user", content: [{ type: "text", text: lines.join("\n") }] });
   } catch (error) {
     notice = error instanceof Error ? error.message : "Analysis failed";

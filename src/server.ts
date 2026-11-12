@@ -170,7 +170,7 @@ const treeSchema = z.object({
   rootFen: z.string(),
   root: treeNodeSchema,
   path: z.array(z.number().int().min(0)),
-  games: z.record(gameInfoSchema),
+  games: z.record(z.string(), gameInfoSchema),
   mainGame: z.string().optional(),
   flipped: z.boolean().default(false),
 });
