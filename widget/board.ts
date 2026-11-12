@@ -56,8 +56,8 @@ interface BoardPayload {
   notice?: string;
   /** Whether the server has a Polyglot book (the Explorer's Book source). */
   book?: boolean;
-  /** The Lichess token's owner, the only player the Explorer and Games tabs show. */
-  user?: string;
+  /** The configured accounts' usernames: the board turns to their side. */
+  users?: string[];
 }
 
 function byId<T extends HTMLElement>(id: string): T {
@@ -131,8 +131,8 @@ function rated(name: string, rating?: number): string {
   return rating ? `${name} (${rating})` : name;
 }
 
-/** The Lichess token's owner, sent by the server with every board. */
-let user = "";
+/** The configured accounts' usernames, lowercased; sent with every board. */
+let users = new Set<string>();
 
 // A played-game tree's game; an analysis tree has none.
 function gameOf(tree: Tree | undefined): GameInfo | undefined {
@@ -211,11 +211,11 @@ function reportTrees(): void {
   }, 1000);
 }
 
-// Black at the bottom when the user played Black in the tree's game, White
-// otherwise; the manual flip reverses it.
+// Black at the bottom when one of the accounts played Black in the tree's
+// game, White otherwise; the manual flip reverses it.
 function orientation(): "white" | "black" {
   const game = mainGame();
-  const base = game && game.black.toLowerCase() === user.toLowerCase() ? "black" : "white";
+  const base = game && users.has(game.black.toLowerCase()) ? "black" : "white";
   return state?.flipped ? (base === "white" ? "black" : "white") : base;
 }
 
@@ -377,7 +377,7 @@ function openBoard(payload: BoardPayload & { trees: Trees }): void {
   viewerId = payload.viewerId;
   proposeOnce = Boolean(payload.propose);
   hasBook = Boolean(payload.book);
-  user = payload.user ?? "Me";
+  users = new Set((payload.users ?? []).map((name) => name.toLowerCase()));
   setSource(hasBook ? source : "games");
   setPath(state.path);
   // After setPath, which clears the notice.
@@ -554,8 +554,6 @@ buttons.flip.addEventListener("click", () => {
   if (!state || stale) return;
   state.flipped = !state.flipped;
   render();
-  // The Explorer shows the user's games with the side now at the bottom.
-  scheduleExplore();
 });
 
 buttons.mainline.addEventListener("click", () => {
@@ -572,21 +570,19 @@ buttons.mainline.addEventListener("click", () => {
   setPath(new Array<number>(depth).fill(0));
 });
 
-// Tabs: Moves | Explorer | Games. Explorer and Games show the user's own
-// games; each queries Lichess only while visible.
+// Tabs: Moves | Explorer | Games. Explorer and Games read the accounts'
+// local game databases (never a site), each only while visible.
 type Tab = "moves" | "explorer" | "games";
 let tab: Tab = "moves";
 
 // On the Explorer only, two buttons: Local (the book, when there is one)
-// and "<user> as <side>", where the side is the one at the bottom of the
-// board (Flip changes it). The player is always the Lichess token's owner,
-// never chosen in the widget.
+// and the personal games (every account, both colors).
 function updatePlayerControls(): void {
   if (stale) return;
   explorerSource.hidden = tab !== "explorer";
   sourceBook.hidden = !hasBook;
   sourceBook.classList.toggle("active", source === "book");
-  asSide.textContent = `${user} as ${orientation()}`;
+  asSide.textContent = "Personal games";
   asSide.classList.toggle("active", source === "games");
 }
 
@@ -606,42 +602,106 @@ tabMoves.addEventListener("click", () => showTab("moves"));
 tabExplorer.addEventListener("click", () => showTab("explorer"));
 tabGames.addEventListener("click", () => showTab("games"));
 
-// Explorer panel: the chosen player's own games from the current position.
-// Requests are debounced so that stepping quickly does not flood Lichess,
-// and only the answer to the latest request is shown.
+// Explorer panel: every account's games from the current position.
+// Requests are debounced so that stepping quickly sends one query, and only
+// the answer to the latest request is shown.
 
 let exploreTimer: ReturnType<typeof setTimeout> | undefined;
-let refreshTimer: ReturnType<typeof setTimeout> | undefined;
 let exploreRequest = 0;
-
-// While the server's Lichess stream is open ("updating"), a fuller answer
-// may arrive; the panel asks again every few seconds (cache hits on the
-// server, no new Lichess requests), for the stream's 2 minutes at most.
-const REFRESH_MS = 5000;
-const MAX_REFRESHES = 24;
 
 interface ExplorerMove {
   uci: string;
   san: string;
   games: number;
+  /** From the account's side, whatever its color. */
   wins: number;
   draws: number;
   losses: number;
-  performance?: number;
 }
 
-interface RecentGame {
-  id: string;
+/**
+ * A move's results as a bar: won, drawn, lost, each as wide as its share.
+ * A share too narrow for its label shows no label.
+ */
+function resultBar(m: ExplorerMove): HTMLSpanElement {
+  const bar = document.createElement("span");
+  bar.className = "bar";
+  for (const [count, className] of [
+    [m.wins, "won"],
+    [m.draws, "drawn"],
+    [m.losses, "lost"],
+  ] as const) {
+    if (!count) continue;
+    const percent = (100 * count) / m.games;
+    const part = document.createElement("span");
+    part.className = className;
+    part.style.width = `${percent}%`;
+    if (percent >= 15) part.textContent = `${Math.round(percent)}%`;
+    bar.append(part);
+  }
+  bar.title = `won ${m.wins}, drawn ${m.draws}, lost ${m.losses}`;
+  return bar;
+}
+
+/** A game as the server lists it, from its account's side. */
+interface ListedGame {
+  /** The game key, `<site>:<site_id>`. */
+  key: string;
+  site: "lichess" | "chesscom";
+  account: string;
+  color: "white" | "black";
   opponent: string;
   opponentRating?: number;
   result: "win" | "draw" | "loss";
+  termination: string;
+  timeControl: string;
   speed: string;
-  month: string;
+  rated: boolean;
+  endedAt: number;
+  thematic: boolean;
+}
+
+const SITES = { lichess: "Lichess", chesscom: "Chess.com" };
+
+/** A time control for display: `180+2` becomes `3+2`, days stay `3d`. */
+function clock(timeControl: string): string {
+  const live = /^(\d+)\+(\d+)$/.exec(timeControl);
+  if (!live) return timeControl;
+  const minutes = Number(live[1]) / 60;
+  return `${Number.isInteger(minutes) ? minutes : minutes.toFixed(1)}+${live[2]}`;
+}
+
+/**
+ * A listed game, on two lines so that it fits the widget's width: color,
+ * opponent and result above; date (UTC), site and clock below, smaller.
+ */
+function gameRow(g: ListedGame, onClick: () => void): HTMLLIElement {
+  const li = document.createElement("li");
+  li.className = "game";
+  const line = (cells: [string, string][]) => {
+    const div = document.createElement("div");
+    for (const [text, className] of cells) {
+      const span = document.createElement("span");
+      span.textContent = text;
+      span.className = className;
+      div.append(span);
+    }
+    return div;
+  };
+  li.append(
+    line([
+      ["", `side ${g.color}`],
+      [`${g.opponent}${g.opponentRating ? ` (${g.opponentRating})` : ""}`, "grow"],
+      [RESULTS[g.result], "result"],
+    ]),
+    line([[`${new Date(g.endedAt).toISOString().slice(0, 10)} · ${SITES[g.site]} · ${clock(g.timeControl)}`, "muted"]]),
+  );
+  li.addEventListener("click", onClick);
+  return li;
 }
 
 function scheduleExplore(): void {
   clearTimeout(exploreTimer);
-  clearTimeout(refreshTimer);
   if (explorerPanel.hidden) return;
   exploreTimer = setTimeout(() => void explore(), 300);
 }
@@ -658,10 +718,9 @@ function row(cells: [string, string][], onClick: () => void): HTMLLIElement {
   return li;
 }
 
-const SPEEDS: Record<string, string> = { correspondence: "corr" };
 const RESULTS = { win: "won", draw: "drew", loss: "lost" };
 
-// Explorer source: the user's games (the player database) or Local (the
+// Explorer source: the personal games (every account) or Local (the
 // server's Polyglot book, offered only when one is configured). A new
 // widget starts on the user's games.
 let hasBook = false;
@@ -716,9 +775,8 @@ async function exploreBook(request: number): Promise<void> {
   );
 }
 
-async function explore(refreshes = 0): Promise<void> {
+async function explore(): Promise<void> {
   if (!state || stale) return;
-  clearTimeout(refreshTimer);
   const request = ++exploreRequest;
   if (source === "book") {
     try {
@@ -729,12 +787,8 @@ async function explore(refreshes = 0): Promise<void> {
     return;
   }
   const step = currentStep();
-  if (refreshes === 0) explorerStatus.textContent = "searching...";
   try {
-    const result = await app.callServerTool({
-      name: "explore_position",
-      arguments: { color: orientation(), fen: step.fen },
-    });
+    const result = await app.callServerTool({ name: "explore_position", arguments: { fen: step.fen } });
     if (request !== exploreRequest) return;
     if (result.isError) {
       explorerStatus.textContent = textOf(result);
@@ -742,55 +796,30 @@ async function explore(refreshes = 0): Promise<void> {
       explorerGames.replaceChildren();
       return;
     }
-    const data = (result.structuredContent ?? {}) as {
-      moves?: ExplorerMove[];
-      recentGames?: RecentGame[];
-      indexing?: boolean;
-      updating?: boolean;
-    };
+    const data = (result.structuredContent ?? {}) as { moves?: ExplorerMove[]; games?: ListedGame[]; total?: number };
     const moves = data.moves ?? [];
-    const games = data.recentGames ?? [];
-    const total = moves.reduce((sum, m) => sum + m.games, 0);
-    // The refresh is silent: a label promising an update makes the developer
-    // wait for a change that almost never comes (the data is usually
-    // complete; Lichess only re-checks for games played since its last
-    // indexing).
-    const refreshing = Boolean(data.updating) && refreshes < MAX_REFRESHES;
-    explorerStatus.textContent = `${total} games from here`;
-    if (refreshing) {
-      refreshTimer = setTimeout(() => {
-        if (request === exploreRequest) void explore(refreshes + 1);
-      }, REFRESH_MS);
-    }
+    const games = data.games ?? [];
+    const total = data.total ?? 0;
+    explorerStatus.textContent =
+      total > games.length ? `${total} games from here; the last ${games.length} below` : `${total} games from here`;
 
-    // Moves already in the tree at this node are marked with a dot.
+    // Moves already in the tree at this node are marked with a dot; each
+    // move shows how many games played it and their results.
     const inTree = new Set(step.node.children.map((c) => c.san));
     explorerMoves.replaceChildren(
-      ...moves.map((m) =>
-        row(
+      ...moves.map((m) => {
+        const li = row(
           [
             [`${inTree.has(m.san) ? "• " : ""}${m.san}`, "main"],
-            [String(m.games), "muted"],
-            [`+${m.wins} =${m.draws} -${m.losses}`, "grow"],
-            [m.performance ? String(m.performance) : "", "muted"],
+            [String(m.games), "count"],
           ],
           () => playMove(m.uci.slice(0, 2), m.uci.slice(2, 4), PROMOTIONS[m.uci[4] as keyof typeof PROMOTIONS]),
-        ),
-      ),
+        );
+        li.append(resultBar(m));
+        return li;
+      }),
     );
-    explorerGames.replaceChildren(
-      ...games.map((g) =>
-        row(
-          [
-            [RESULTS[g.result], "main"],
-            [`vs ${g.opponent}${g.opponentRating ? ` (${g.opponentRating})` : ""}`, "grow"],
-            [SPEEDS[g.speed] ?? g.speed, "muted"],
-            [g.month, "muted"],
-          ],
-          () => void addGame(g.id, step.fen, "explorer"),
-        ),
-      ),
-    );
+    explorerGames.replaceChildren(...games.map((g) => gameRow(g, () => void addGame(g.key, step.fen, "explorer"))));
   } catch (error) {
     if (request === exploreRequest) explorerStatus.textContent = error instanceof Error ? error.message : "Search failed";
   }
@@ -859,27 +888,8 @@ async function addGame(id: string, searchedFen: string, from: "explorer" | "game
   }
 }
 
-// Games tab: the player's last finished games, newest first, both colors.
-
-interface ListedGame {
-  id: string;
-  color: "white" | "black";
-  opponent: string;
-  opponentRating?: number;
-  result: "win" | "draw" | "loss";
-  speed: string;
-  endedAt?: number;
-}
-
-function ago(ms: number | undefined): string {
-  if (!ms) return "";
-  const seconds = (Date.now() - ms) / 1000;
-  if (seconds < 3600) return `${Math.max(1, Math.round(seconds / 60))} min ago`;
-  if (seconds < 86_400) return `${Math.round(seconds / 3600)} h ago`;
-  if (seconds < 2 * 86_400) return "yesterday";
-  if (seconds < 7 * 86_400) return `${Math.floor(seconds / 86_400)} days ago`;
-  return new Date(ms).toISOString().slice(0, 10);
-}
+// Games tab: every account's games, newest first, both colors (filters and
+// the sync button come with the All Games tab).
 
 let gamesRequest = 0;
 
@@ -888,29 +898,17 @@ async function listRecentGames(): Promise<void> {
   const request = ++gamesRequest;
   gamesStatus.textContent = "loading...";
   try {
-    const result = await app.callServerTool({ name: "recent_games", arguments: {} });
+    const result = await app.callServerTool({ name: "list_games", arguments: {} });
     if (request !== gamesRequest) return;
     if (result.isError) {
       gamesStatus.textContent = textOf(result);
       gamesList.replaceChildren();
       return;
     }
-    const games = ((result.structuredContent ?? {}) as { games?: ListedGame[] }).games ?? [];
-    gamesStatus.textContent = `Your last ${games.length} finished games`;
-    gamesList.replaceChildren(
-      ...games.map((g) =>
-        row(
-          [
-            [RESULTS[g.result], "main"],
-            [g.color === "white" ? "W" : "B", "muted"],
-            [`vs ${g.opponent}${g.opponentRating ? ` (${g.opponentRating})` : ""}`, "grow"],
-            [SPEEDS[g.speed] ?? g.speed, "muted"],
-            [ago(g.endedAt), "muted"],
-          ],
-          () => void addGame(g.id, currentStep().fen, "games"),
-        ),
-      ),
-    );
+    const data = (result.structuredContent ?? {}) as { games?: ListedGame[]; total?: number };
+    const games = data.games ?? [];
+    gamesStatus.textContent = `${data.total ?? 0} games; the last ${games.length} below`;
+    gamesList.replaceChildren(...games.map((g) => gameRow(g, () => void addGame(g.key, currentStep().fen, "games"))));
   } catch (error) {
     if (request === gamesRequest) gamesStatus.textContent = error instanceof Error ? error.message : "Loading failed";
   }

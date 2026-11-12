@@ -11,7 +11,11 @@ passed: Chess.com's archive has `rated` (2,960 rated, 30 casual);
 terminations consistent with results, none `other`; daily games stored
 (`1d`, `3d`); disambiguation only when needed (`Nge7`, `Rfxd8`,
 `Rac1`). No thematic game in the data yet, so that path is untested.
-Phase 1 complete. Implements local-games-v1.md
+Phase 1 complete. Phase 2 implemented (2026-11-12), not yet tested.
+Deviation: so that the widget keeps working between phases, phase 2
+also adapts it minimally (Explorer with plain counts and both colors,
+the Games tab reading `list_games` unfiltered, game keys); phase 3 adds
+the tab names, filters and sync button. Implements local-games-v1.md
 (decisions 1-11 and the settled open points).*
 
 Three phases, each ending in a working server and its own commit:

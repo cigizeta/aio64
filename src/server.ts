@@ -11,22 +11,10 @@ import {
 } from "@modelcontextprotocol/ext-apps/server";
 import { validateFen } from "chess.js";
 import { z } from "zod";
-import { explorePlayer } from "./explorer.js";
 import { loadBook } from "./book.js";
 import { logCall, logLine, note, withNote } from "./log.js";
-import {
-  type GameInfo,
-  type Tree,
-  type TreeNode,
-  type Trees,
-  MAX_TREES,
-  games,
-  getState,
-  latest,
-  saveState,
-  viewers,
-} from "./cache.js";
-import { checkLichessToken, fetchGame, type Game, GameError, parseGameId, recentGames } from "./lichess.js";
+import { type Tree, type TreeNode, type Trees, MAX_TREES, getState, latest, saveState, viewers } from "./cache.js";
+import { explore, listGames, loadGame } from "./games.js";
 import { type Account, accountDb, accountsFromEnv, startSync, syncStatus } from "./sync.js";
 
 // All analysis runs in the widget: Stockfish.js lite single-threaded
@@ -68,16 +56,8 @@ try {
   process.exit(1);
 }
 
-const lichessToken = process.env.LICHESS_TOKEN ?? "";
-if (!lichessToken) {
-  console.error("LICHESS_TOKEN missing (see .env.example)");
-  process.exit(1);
-}
-// The user is the token's owner, never configured separately.
-const lichessUser = await checkLichessToken(lichessToken);
-console.log(`Lichess token verified: ${lichessUser}, no scopes`);
-
 // The accounts whose finished games the server keeps, one SQLite file each.
+// Public data only: no site token is ever held.
 let accounts: Account[];
 try {
   accounts = accountsFromEnv();
@@ -89,10 +69,10 @@ if (accounts.length === 0) {
   console.error("No accounts: set LICHESS_USERS and/or CHESSCOM_USERS (see .env.example)");
   process.exit(1);
 }
-for (const account of accounts) {
-  const db = accountDb(account);
-  console.log(`Games of ${db.label}: ${db.countGames()} stored`);
-}
+const dbs = accounts.map(accountDb);
+for (const db of dbs) console.log(`Games of ${db.label}: ${db.countGames()} stored`);
+// The widget turns the board to the side these players had in a game.
+const usernames = accounts.map((account) => account.username);
 // Temporary, for testing the sync before the widget has its button; to be
 // removed then, since a sync is otherwise only ever started by hand.
 if (process.env.SYNC_ON_START === "1") startSync(accounts);
@@ -117,22 +97,6 @@ const READ_ONLY = { readOnlyHint: true };
 const fenInput = { fen: z.string().describe("FEN of the position") };
 
 const START_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
-
-/** A finished standard Lichess game, from the cache or from Lichess. */
-async function loadGame(input: string): Promise<{ id: string; game: Game }> {
-  const id = parseGameId(input);
-  let game = games.get(id);
-  if (!game) {
-    game = await fetchGame(id, lichessToken);
-    games.set(id, game);
-  }
-  return { id, game };
-}
-
-function gameInfo(id: string, game: Game): GameInfo {
-  const { white, black, whiteRating, blackRating, result, opening } = game;
-  return { id, white, black, whiteRating, blackRating, result, opening };
-}
 
 /** A new analysis tree: a position with no game. */
 function analysisTree(rootFen: string, flipped = false): Tree {
@@ -171,7 +135,7 @@ function boardResult(text: string, trees: Trees, propose = false, notice?: strin
   latest.trees = trees;
   return {
     ...textResult(text),
-    structuredContent: { trees, viewerId, propose, notice, book: Boolean(book), user: lichessUser },
+    structuredContent: { trees, viewerId, propose, notice, book: Boolean(book), users: usernames },
   };
 }
 
@@ -390,32 +354,24 @@ function buildMcpServer(): McpServer {
     },
   );
 
-  // The explorer panel: the token owner's own games from the current
-  // position (player database only). Always the token's owner, never a player
-  // chosen in the widget. Results go to the widget, never to Claude;
-  // hidden from Claude's tool list.
+  // The Explorer's personal games: the moves played from a position and the
+  // games that reached it, over every account and both colors, from the
+  // local databases. Results go to the widget only; hidden from Claude.
   registerAppTool(
     server,
     "explore_position",
     {
-      description: "The user's own moves and recent games from a position.",
-      inputSchema: {
-        color: z.enum(["white", "black"]),
-        fen: z.string(),
-      },
+      description: "The moves and games of every account from a position.",
+      inputSchema: fenInput,
       annotations: READ_ONLY,
       _meta: { ui: { resourceUri: BOARD_URI, visibility: ["app"] } },
     },
-    async ({ color, fen }) => {
+    async ({ fen }) => {
       const check = validateFen(fen);
       if (!check.ok) return textResult(check.error ?? "Invalid FEN", true);
-      try {
-        const exploration = await explorePlayer(lichessUser, color, fen, lichessToken);
-        return { ...textResult(`${exploration.moves.length} moves`), structuredContent: { ...exploration } };
-      } catch (error) {
-        if (error instanceof GameError) return textResult(error.message, true);
-        return textResult(`Lichess error: ${error instanceof Error ? error.message : String(error)}`, true);
-      }
+      const exploration = explore(dbs, fen);
+      note(`${exploration.total} games`);
+      return { ...textResult(`${exploration.moves.length} moves`), structuredContent: { ...exploration } };
     },
   );
 
@@ -441,55 +397,55 @@ function buildMcpServer(): McpServer {
     );
   }
 
-  // The Games tab: the token owner's last finished games, to review them right
-  // after playing. Results go to the widget only; hidden from Claude.
+  // All Games: every account's games, newest first, filtered, a page at a
+  // time, from the local databases. Hidden from Claude.
   registerAppTool(
     server,
-    "recent_games",
+    "list_games",
     {
-      description: "The user's last finished games, newest first.",
-      inputSchema: {},
+      description: "Every account's finished games, newest first, filtered.",
+      inputSchema: {
+        account: z.string().optional(),
+        opponent: z.string().max(40).optional(),
+        color: z.enum(["white", "black"]).optional(),
+        result: z.enum(["win", "draw", "loss"]).optional(),
+        termination: z.string().max(20).optional(),
+        speed: z.enum(["bullet", "blitz", "rapid", "classical", "daily"]).optional(),
+        rated: z.boolean().optional(),
+        from: z.number().int().optional(),
+        to: z.number().int().optional(),
+        thematic: z.boolean().optional(),
+        offset: z.number().int().min(0).default(0),
+      },
       annotations: READ_ONLY,
       _meta: { ui: { resourceUri: BOARD_URI, visibility: ["app"] } },
     },
-    async () => {
-      try {
-        const list = await recentGames(lichessUser, lichessToken);
-        return { ...textResult(`${list.length} games`), structuredContent: { games: list } };
-      } catch (error) {
-        if (error instanceof GameError) return textResult(error.message, true);
-        return textResult(`Lichess error: ${error instanceof Error ? error.message : String(error)}`, true);
-      }
+    async ({ offset, ...filters }) => {
+      const page = listGames(dbs, filters, offset);
+      note(`${page.total} games`);
+      return {
+        ...textResult(`${page.games.length} of ${page.total} games`),
+        structuredContent: { ...page, accounts: dbs.map((db) => db.label) },
+      };
     },
   );
 
-  // A game found by the explorer; the widget joins its line into the tree.
-  // Same checks as open_board (finished games only); hidden from Claude's
-  // tool list.
+  // A game from the Explorer or All Games, by key (`<site>:<site_id>`), for
+  // a new tree. Only from the local databases, which hold finished games
+  // only; never from a site. Hidden from Claude.
   registerAppTool(
     server,
     "load_game",
     {
-      description: "A finished game's start position and moves.",
-      inputSchema: { game: z.string() },
+      description: "A stored game's start position and moves.",
+      inputSchema: { game: z.string().max(80) },
       annotations: READ_ONLY,
       _meta: { ui: { resourceUri: BOARD_URI, visibility: ["app"] } },
     },
     async ({ game }) => {
-      try {
-        const { id, game: loaded } = await loadGame(game);
-        return {
-          ...textResult("Game loaded."),
-          structuredContent: {
-            game: gameInfo(id, loaded),
-            startFen: loaded.initialFen ?? START_FEN,
-            moves: loaded.moves,
-          },
-        };
-      } catch (error) {
-        if (error instanceof GameError) return textResult(error.message, true);
-        return textResult(`Lichess error: ${error instanceof Error ? error.message : String(error)}`, true);
-      }
+      const loaded = loadGame(dbs, game);
+      if (!loaded) return textResult(`No stored game ${game}.`, true);
+      return { ...textResult("Game loaded."), structuredContent: loaded };
     },
   );
 
@@ -498,10 +454,10 @@ function buildMcpServer(): McpServer {
     "open_board",
     {
       description:
-        "Open an interactive chess board at a position (FEN) or the start, to explore the user's own games and review their recent ones.",
+        "Open an interactive chess board at a position (FEN) or the start, to explore the user's own games and review them.",
       inputSchema: {
         fen: z.string().optional().describe("Position to show"),
-        color: z.enum(["white", "black"]).optional().describe("Side at the bottom; the explorer shows the user's games with it"),
+        color: z.enum(["white", "black"]).optional().describe("Side at the bottom"),
         state: z.string().optional().describe("Saved board ID, to reopen"),
       },
       annotations: READ_ONLY,

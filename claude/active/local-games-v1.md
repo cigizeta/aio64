@@ -46,10 +46,11 @@ sites, filled by a manual sync. Games tab and Explorer read from it.
 7. **Explorer sources** (revised 2026-11-12): two, the master book (the
    local Polyglot book) and personal games (every account combined,
    counts added up). Personal games shows games of both colors.
-8. **No statistics for account sources:** the next moves from the
-   position are listed with a plain count (`Nf3 · 12`), no W/D/L, no
-   performance. Results over one player's games are too few and too
-   biased to mean much, and without them mixing colors is harmless.
+8. **Results for personal games** (revised 2026-11-12; the 2026-11-08
+   decision showed plain counts only): each move shows its game count,
+   right-aligned, and a won / drawn / lost bar, from the account's side
+   whatever its color (so mixing colors stays meaningful). No
+   performance rating.
 9. **No master statistics for now.** The book (Polyglot) holds only
    moves and weights, never results, so its percentages are preferences.
    A master database with W/D/L is to be built in a separate project;

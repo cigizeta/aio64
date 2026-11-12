@@ -21,8 +21,8 @@ subscription pays for the conversation on Claude's side.
 - Only the sync tool writes, and only to those databases; it is annotated
   honestly (`readOnlyHint: false`, `destructiveHint: false`,
   `idempotentHint: true`). Every other tool carries `readOnlyHint: true`.
-- External tokens get the least rights possible, and the server verifies
-  them at startup (the Lichess token must have no scopes).
+- Aio64 holds no Lichess or Chess.com token or password: the sync reads
+  public data by username only.
 - Games are analyzed only once finished; the server enforces this from
   the game status, never relying on Claude's judgment.
 

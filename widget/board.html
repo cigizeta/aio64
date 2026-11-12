@@ -223,6 +223,80 @@
       .rows .muted {
         color: var(--muted);
       }
+      /* The color played: two circles drawn alike, white and black, rather
+         than two font glyphs that render at different sizes. */
+      .rows .side {
+        flex: none;
+        width: 10px;
+        height: 10px;
+        align-self: center;
+        border-radius: 50%;
+        border: 1px solid var(--muted);
+        box-sizing: border-box;
+      }
+      .rows .side.white {
+        background: #fff;
+      }
+      .rows .side.black {
+        background: #000;
+      }
+      /* A move's game count, right-aligned with digits of equal width so
+         that the counts line up. */
+      .rows .count {
+        min-width: 3em;
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+        color: var(--muted);
+      }
+      /* A move's results: won (light), drawn (grey), lost (dark), each as
+         wide as its share; the same in light and dark mode, like a board. */
+      .rows .bar {
+        flex: 1;
+        display: flex;
+        min-width: 0;
+        height: 1.3em;
+        align-self: center;
+        overflow: hidden;
+        border-radius: 3px;
+        border: 1px solid var(--button-border);
+        font-size: 0.8em;
+        line-height: 1.3em;
+      }
+      .rows .bar > span {
+        overflow: hidden;
+        white-space: nowrap;
+        text-align: center;
+      }
+      .rows .bar .won {
+        background: #f2f2f2;
+        color: #333;
+      }
+      .rows .bar .drawn {
+        background: #8c8c8c;
+        color: #fff;
+      }
+      .rows .bar .lost {
+        background: #3a3a3a;
+        color: #eee;
+      }
+      /* A game on two lines, games separated by a rule. */
+      .rows li.game {
+        flex-direction: column;
+        gap: 1px;
+        border-bottom: 1px solid var(--button-border);
+      }
+      .rows li.game > div {
+        display: flex;
+        gap: 8px;
+      }
+      .rows li.game > div + div {
+        /* The second line starts under the name, past the color circle. */
+        padding-left: 18px;
+        font-size: 0.85em;
+      }
+      .rows li.game .result {
+        font-weight: 600;
+      }
       .rows .grow {
         flex: 1;
         overflow: hidden;

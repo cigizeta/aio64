@@ -1,7 +1,5 @@
-import type { Game } from "./lichess.js";
-
-// In-memory caches; lost on restart, which is harmless. Nothing is ever
-// written to disk: Aio64 stays read-only.
+// In-memory caches; lost on restart, which is harmless. Nothing here is
+// written to disk (only the sync writes, to the accounts' game databases).
 
 /** Bounded insertion: Map keeps insertion order, so the first key is the oldest. */
 function setBounded<K, V>(map: Map<K, V>, key: K, value: V, max: number): void {
@@ -9,10 +7,8 @@ function setBounded<K, V>(map: Map<K, V>, key: K, value: V, max: number): void {
   while (map.size > max) map.delete(map.keys().next().value!);
 }
 
-/** Finished Lichess games never change, so a reopen never calls Lichess. */
-export const games = new Map<string, Game>();
-
 export interface GameInfo {
+  /** The game key, `<site>:<site_id>` (e.g. `lichess:q7ZvsdUF`). */
   id: string;
   white: string;
   black: string;

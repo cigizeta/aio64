@@ -17,13 +17,15 @@ in the mobile app.
   reached.
 - **Explain**: sends the position and the analysis (at least depth 20) to
   Claude, which explains it in plain language.
-- **Your Lichess games**: the Games tab lists your last finished games; the
-  Explorer searches your own games from the position on the board, or a
-  local Polyglot opening book.
+- **Your games**: the finished games of your Lichess and Chess.com
+  accounts, kept in local databases filled by a sync you start by hand.
+  The Games tab lists them; the Explorer searches them from the position
+  on the board, or a local Polyglot opening book.
 
-Read-only by design: no tool writes anything anywhere, the Lichess token
-must have no scopes (the server refuses to start otherwise), and only
-finished games are analyzed.
+Read-only by design: only the sync writes, and only to the local game
+databases; nothing is ever written to Lichess, Chess.com or any other
+service. No site token or password is needed (public data only), and only
+finished games are stored.
 
 ## Requirements
 
@@ -31,8 +33,7 @@ finished games are analyzed.
 - Node.js 24, pinned through [Volta](https://volta.sh) in `package.json`.
 - An [ngrok](https://ngrok.com) account; the free plan's static domain is
   enough.
-- A Lichess account and a personal API token created at
-  <https://lichess.org/account/oauth/token> with **no scopes ticked**.
+- A Lichess and/or Chess.com account (its username only).
 - Optional: a Polyglot opening book (`.bin`).
 
 No chess engine needs installing: the widget loads Stockfish.js 19 lite
@@ -63,7 +64,6 @@ Fill in `.env`:
 | `PUBLIC_URL` | your ngrok domain, e.g. `https://<your-domain>.ngrok-free.dev` |
 | `PORT` | local port, `8000` by default |
 | `AIO64_TOKEN` | a random secret of at least 32 characters (see below) |
-| `LICHESS_TOKEN` | the scopeless Lichess token; its owner is the player whose games are shown |
 | `LICHESS_USERS` | Lichess usernames whose finished games are kept, comma-separated |
 | `CHESSCOM_USERS` | Chess.com usernames whose finished games are kept, comma-separated |
 | `POLYGLOT_PATH` | optional: path to a `.bin` book, e.g. `books/book.bin` |
@@ -97,8 +97,9 @@ ngrok http 8000
 ngrok uses your account's dev domain; add `--url=<your-domain>` only if
 you have more than one.
 
-At startup the server checks the Lichess token (it must have no scopes),
-loads the book if configured, and logs one line per tool call.
+At startup the server opens each account's game database (logging how
+many games it holds), loads the book if configured, and logs one line per
+tool call.
 
 ## Connect Claude
 
