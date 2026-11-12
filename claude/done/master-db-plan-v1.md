@@ -2,7 +2,14 @@
 
 *Status: implemented (2026-11-12); test 6 passed (no master database:
 the Master button shows "No Master database available", centered);
-tests 1-5 and 7 to do. Deviation: the PGN
+test 2 passed (5,000-game sample, zstd read from Google Drive: 0
+rejected, 142,680 pairs, 3 MB); test 3 passed (the `[Y/n]` prompt,
+Enter rebuilt); test 4 passed: LumbrasGigaBase OTB ELO2400, 863,790
+games in 8.1 min (0 skipped, 0 rejected), 15,486,928 positions and
+moves, 331 MB; the speed held at about 1,800 games per second, so no
+batching change needed. Tests 5 and 7 passed (the widget: Master moves
+with counts and results bars; developer, desktop). Plan complete;
+storing master games too is left to rethink (TODO.md). Deviation: the PGN
 is read in place (e.g. from Google Drive), not copied first (developer). Implements master-db-v1.md
 (decisions 1-9). Comes after local-games-plan-v1.md phase 3, so that
 the Explorer's sources change once.*

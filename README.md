@@ -83,8 +83,9 @@ node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"
 
 The Explorer's Master source shows, for each position up to move 20, the
 moves played in a PGN collection of your choice, with how many games
-played each and how White scored. Build it from one or more PGN files
-(any size; the collection you choose is the filter):
+played each and how White scored. Build it from one or more PGN files,
+plain or zstd-compressed (detected automatically, read without
+unpacking), of any size; the collection you choose is the filter:
 
 ```bash
 npm run build-master -- <file.pgn>

@@ -53,6 +53,13 @@ repository and must never be pushed here.
 
 ## Later
 
+- Master database with games (developer to rethink, 2026-11-12). Today
+  totals only: 864k games, 331 MB, 8 min. Estimates for 864k games:
+  (A) games + index every ply, 3-4 GB, about an hour; (B) games + index
+  up to ply 40, about 1.5 GB, 20-30 min; (C) totals + the top games per
+  position (e.g. 8 by average rating, as master explorers do), about
+  twice today's size, 15-20 min. Claude recommended C.
+
 - Explorer: show the current position's opening name, looked up by
   position in Lichess's openings list (CC0). Nothing stored; a game
   column can be added later from the stored moves, without a re-sync.
