@@ -103,16 +103,20 @@ Shared by both syncs, pure functions, no I/O:
 - Only one sync at a time: a second call while one runs is refused
   ("sync already running").
 
-### Tool `sync_games` (server)
+### Tools `sync_games` and `sync_status` (server)
 
-- Widget-only (`visibility: ["app"]`), annotations
+The sync is always asynchronous: a first sync can take minutes, and no
+tool call waits for it.
+
+- **`sync_games`**: widget-only (`visibility: ["app"]`), annotations
   `readOnlyHint: false`, `destructiveHint: false`,
-  `idempotentHint: true`, `openWorldHint: true`.
-- Runs `syncAll` and returns the summary per account. It may take
-  minutes on the first run: test whether claude.ai's tool call timeout
-  allows it. If not, the tool starts the sync and returns at once, and
-  a second widget-only tool `sync_status` reports progress, polled by
-  the widget every 2 s.
+  `idempotentHint: true`, `openWorldHint: true`. Starts `syncAll` in the
+  background and returns at once: "started", or "already running".
+- **`sync_status`**: widget-only, `readOnlyHint: true`. Returns
+  `{ running, progress, summary }`: `progress` is a line such as
+  `lichess/<user>: 120 games`, `summary` the last finished sync's
+  result per account (new games, rejected games, error). Kept in server
+  memory only.
 
 ### Phase 1 tests
 
@@ -190,8 +194,10 @@ Shared by both syncs, pure functions, no I/O:
   - The sync button (⟳) at the end of the row. A click asks "Sync all
     accounts? It may take a few minutes." (an in-widget confirmation,
     not a browser dialog, which sandboxed iframes may block); on
-    confirm, the status line shows progress, then the summary; the
-    list reloads.
+    confirm, `sync_games`, then `sync_status` every 2 s: the status
+    line shows the progress, then the summary, and the list reloads.
+    The button is disabled while a sync runs. A widget opened during a
+    sync finds it running through `sync_status` and follows it too.
   - Rows: date (`ended_at`, UTC, `2026-11-12`), site, color played
     (● Black, ○ White), opponent, result, time control. Click: the
     game opens as a tree at its final position (today's `addGame`
@@ -226,7 +232,7 @@ src/record.ts             new: replay, termination, time control
 src/sync-lichess.ts       new
 src/sync-chesscom.ts      new
 src/sync.ts               new: all accounts, one at a time
-src/server.ts             sync_games, list_games, explore_position,
+src/server.ts             sync_games, sync_status, list_games, explore_position,
                           load_game, open_board, token removed
 src/explorer.ts           reduced or removed
 src/lichess.ts            removed (its parsing moves to sync-lichess.ts)
