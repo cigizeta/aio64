@@ -61,7 +61,6 @@ repository and must never be pushed here.
   Claude opens carries them over. Rethink this before supporting other
   users.
 
-- Change the layout of the Games tab (to be designed).
 
 - The Explorer's dot before a move (`• e4`) means "already in the current
   tree"; confusing. Decide: remove it, make it explicit ("in tree"), or

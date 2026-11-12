@@ -31,10 +31,21 @@ sites, filled by a manual sync. Games tab and Explorer read from it.
    Lichess username and each Chess.com username in `.env`. Adding or
    removing an account adds or deletes one file; a sync of one account
    touches only its file.
-6. **No Games tab** (2026-11-08). Its list is the Explorer's game list at
-   the start position; the tab and `recent_games` go away.
-7. **Explorer sources:** the local book, or one account's database
-   (one at a time). An account source shows games of both colors.
+6. **Tabs: PGN, Explorer, All Games** (revised 2026-11-12; the
+   2026-11-08 decision removed the Games tab). Moves is renamed PGN.
+   All Games replaces the Games tab: the games of every account,
+   newest first, with a column naming each game's account, read from
+   the databases (`recent_games` goes). It is
+   needed because thematic games never pass through the start position,
+   so the Explorer at the start cannot list every game. Filters, each
+   narrowing the list: account, opponent (part of a name, ignoring case), color
+   played, result for the account (won, drawn, lost), termination,
+   speed (bullet, blitz, rapid, classical, daily, derived from
+   `time_control`), rated or casual, date range (`ended_at`), standard
+   or thematic (`initial_fen` set).
+7. **Explorer sources** (revised 2026-11-12): two, the master book (the
+   local Polyglot book) and personal games (every account combined,
+   counts added up). Personal games shows games of both colors.
 8. **No statistics for account sources:** the next moves from the
    position are listed with a plain count (`Nf3 · 12`), no W/D/L, no
    performance. Results over one player's games are too few and too
@@ -126,11 +137,13 @@ occurred three times (pieces, side to move, castling, en passant);
 1. **Sync confirmation.** claude.ai may ask for confirmation when a
    non-read-only tool runs, even one called from the widget: to check.
 2. (Settled: finished games only, see "Format".)
-3. **Storage details.** `node:sqlite`: check its stability flag in the
-   pinned Node 24. Location: an ignored directory in the repository,
-   like `books/`. File naming (site and username, e.g.
-   `lichess-<user>.sqlite`). Queries across accounts open each file, or
-   `ATTACH` them to one connection.
+3. **Storage details.** Settled (2026-11-12): files in `games/`,
+   ignored by git like `books/`, named `<site>-<username>.sqlite` with
+   the username lowercased (e.g. `games/lichess-<user>.sqlite`). Still
+   open: `node:sqlite`'s stability flag in the pinned Node 24 (to check
+   when implementing). All Games spans every account (decision 6): the
+   server `ATTACH`es the files or queries each and merges; chosen when
+   implementing. So does the Explorer's personal games (decision 7).
 4. (Settled: every ply, Zobrist hash via `@echecs/zobrist`, already a
    dependency; replaces the Lichess player explorer.)
 5. (Settled: see "Format".)
@@ -141,21 +154,25 @@ occurred three times (pieces, side to move, castling, en passant);
 7. **Lichess details to verify:** anonymous export rate limit; whether
    `/api/games/user` without a token returns everything needed (clocks,
    opening, status).
-8. **Re-sync and errors.** A partial sync (network failure) must leave the
-   database consistent and resume on the next press. A full rebuild
-   option (delete and re-fetch)?
-9. **Widget.** Where the sync button lives (next to the account
-   selector?), what it shows during and after a sync (`12 new games`),
-   and how the game list shows each game (color, opponent, result, how it
-   ended, date).
-10. **Existing tools.** `recent_games` goes (decision 6);
-    `explore_position` and `load_game` change source to the database;
-    `load_game` from a pasted Lichess link could still fetch directly, or
-    only from the database.
-11. **Back to all games.** After reviewing a game, the board is inside
-    its tree and the Explorer shows only that game. A way to the full
-    list (newest first) is needed: an "all games" toggle in the game list
-    that ignores the board, or another solution.
+8. Settled (2026-11-12): each batch (a Lichess page, a Chess.com month)
+   is written in one transaction together with its cursor, so a failure
+   loses at most that batch and the next press resumes. No rebuild
+   button: deleting the account's file by hand starts over; a format
+   change rebuilds from `source` via `schema_version`.
+9. **Widget.** Settled (2026-11-12): one sync button, in the All Games
+   tab next to the filters, syncs every account one after another; the
+   tab's status line shows progress, then a summary; a failing account
+   is reported and the others still sync. Each row, for now: date
+   (`ended_at`, UTC), site, color played, opponent, result, time
+   control. Clicking a row opens the game as a tree at its final
+   position.
+10. Settled (2026-11-12): `recent_games` goes (All Games reads the
+    database, decision 6);
+    `explore_position` reads the selected account's `positions`;
+    `load_game` reads only the database, by `games.id`, never a site.
+    The server contacts Lichess and Chess.com only during a sync.
+11. Settled (2026-11-12): the All Games tab (decision 6), not a toggle
+    in the Explorer; the Explorer follows the position only.
 
 ## Afterwards
 
