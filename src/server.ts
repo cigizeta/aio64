@@ -73,9 +73,6 @@ const dbs = accounts.map(accountDb);
 for (const db of dbs) console.log(`Games of ${db.label}: ${db.countGames()} stored`);
 // The widget turns the board to the side these players had in a game.
 const usernames = accounts.map((account) => account.username);
-// Temporary, for testing the sync before the widget has its button; to be
-// removed then, since a sync is otherwise only ever started by hand.
-if (process.env.SYNC_ON_START === "1") startSync(accounts);
 
 const book = loadBook(process.env.POLYGLOT_PATH);
 console.log(book ? `Polyglot book loaded: ${book.entries} entries` : "No POLYGLOT_PATH: book disabled");

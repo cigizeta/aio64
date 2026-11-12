@@ -11,6 +11,7 @@
         --muted: #6b6b6b;
         --button-bg: #f0ece4;
         --button-border: #c9c1b2;
+        --dialog-bg: #ffffff;
       }
       @media (prefers-color-scheme: dark) {
         :root {
@@ -18,7 +19,12 @@
           --muted: #a0a0a0;
           --button-bg: #2f2c28;
           --button-border: #555049;
+          --dialog-bg: #262422;
         }
+      }
+      /* `hidden` wins over any display set below (flex, grid). */
+      [hidden] {
+        display: none !important;
       }
       html,
       body {
@@ -192,6 +198,78 @@
         gap: 6px;
         margin-top: 8px;
       }
+      /* All Games: filters and sync above the list. */
+      #games-bar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 6px;
+        margin-top: 8px;
+      }
+      #games-bar .spacer {
+        flex: 1;
+      }
+      #sync:disabled {
+        opacity: 0.4;
+        cursor: default;
+      }
+      /* The overlay dims the whole widget; the dialog sits in its middle. */
+      #sync-confirm {
+        position: fixed;
+        inset: 0;
+        z-index: 10;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(0, 0, 0, 0.45);
+      }
+      #sync-confirm .dialog {
+        width: min(85%, 300px);
+        padding: 14px 16px;
+        border: 1px solid var(--button-border);
+        border-radius: 8px;
+        background: var(--dialog-bg);
+        color: var(--text);
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+      }
+      #sync-confirm p {
+        margin: 0 0 12px;
+      }
+      #sync-confirm .dialog-buttons {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+      }
+      #games-filters {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 6px;
+        margin-top: 8px;
+      }
+      #games-filters select,
+      #games-filters input {
+        min-width: 0;
+        width: 100%;
+        box-sizing: border-box;
+        padding: 3px 4px;
+        border: 1px solid var(--button-border);
+        border-radius: 6px;
+        background: var(--button-bg);
+        color: var(--text);
+        font: inherit;
+        font-size: 12px;
+      }
+      #games-filters label {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        font-size: 12px;
+        color: var(--muted);
+      }
+      #games-more {
+        display: block;
+        margin: 6px auto;
+      }
       #explorer-status,
       #games-status {
         margin: 6px 0 2px;
@@ -327,13 +405,79 @@
         <button id="explain">Explain</button>
       </div>
       <div id="tabs">
-        <button id="tab-moves" class="tab active">Moves</button>
+        <button id="tab-moves" class="tab active">PGN</button>
         <button id="tab-explorer" class="tab">Explorer</button>
-        <button id="tab-games" class="tab">Games</button>
+        <button id="tab-games" class="tab">All Games</button>
       </div>
       <div id="explorer-source" hidden>
         <button id="source-book" class="toggle" title="Explorer: the local opening book">Local</button>
-        <button id="as-side" class="toggle" title="Explorer: your games with the side at the bottom (flip to change)"></button>
+        <button id="as-side" class="toggle" title="Explorer: every account's games"></button>
+      </div>
+      <!-- All Games: the filters (folded by default) and the sync button. -->
+      <div id="games-bar" hidden>
+        <button id="filters-toggle" class="toggle">Filters</button>
+        <button id="filters-clear" class="toggle" hidden>Clear</button>
+        <span class="spacer"></span>
+        <button id="sync" class="toggle" title="Sync every account's finished games">&#x27F3; Sync</button>
+      </div>
+      <!-- The sync's confirmation: an overlay over the whole widget. -->
+      <div id="sync-confirm" hidden>
+        <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="sync-question">
+          <p id="sync-question">Sync all accounts? It may take a few minutes.</p>
+          <div class="dialog-buttons">
+            <button id="sync-no" class="toggle">Cancel</button>
+            <button id="sync-yes" class="toggle active">Sync</button>
+          </div>
+        </div>
+      </div>
+      <div id="games-filters" hidden>
+        <select id="f-account"><option value="">Any account</option></select>
+        <input id="f-opponent" type="search" placeholder="Opponent" maxlength="40" />
+        <select id="f-color">
+          <option value="">Any color</option>
+          <option value="white">White</option>
+          <option value="black">Black</option>
+        </select>
+        <select id="f-result">
+          <option value="">Any result</option>
+          <option value="win">Win</option>
+          <option value="draw">Draw</option>
+          <option value="loss">Loss</option>
+        </select>
+        <select id="f-termination">
+          <option value="">Any ending</option>
+          <option value="checkmate">Checkmate</option>
+          <option value="resignation">Resignation</option>
+          <option value="time">Time</option>
+          <option value="abandonment">Abandonment</option>
+          <option value="agreement">Agreement</option>
+          <option value="repetition">Repetition</option>
+          <option value="stalemate">Stalemate</option>
+          <option value="insufficient">Insufficient material</option>
+          <option value="fifty-move">Fifty moves</option>
+          <option value="time-insufficient">Time vs insufficient</option>
+          <option value="other">Other</option>
+        </select>
+        <select id="f-speed">
+          <option value="">Any speed</option>
+          <option value="bullet">Bullet</option>
+          <option value="blitz">Blitz</option>
+          <option value="rapid">Rapid</option>
+          <option value="classical">Classical</option>
+          <option value="daily">Daily</option>
+        </select>
+        <select id="f-rated">
+          <option value="">Rated or casual</option>
+          <option value="true">Rated</option>
+          <option value="false">Casual</option>
+        </select>
+        <select id="f-thematic">
+          <option value="">Standard or thematic</option>
+          <option value="false">Standard</option>
+          <option value="true">Thematic</option>
+        </select>
+        <label>From <input id="f-from" type="date" /></label>
+        <label>To <input id="f-to" type="date" /></label>
       </div>
       <section id="moves"></section>
       <section id="explorer" hidden>
@@ -345,6 +489,7 @@
       <section id="games" hidden>
         <div id="games-status"></div>
         <ul id="games-list" class="rows"></ul>
+        <button id="games-more" class="toggle" hidden>More</button>
       </section>
       <div id="collapsed" hidden>Continued below &#x2193;</div>
     </main>

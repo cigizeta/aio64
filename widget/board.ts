@@ -66,12 +66,44 @@ function byId<T extends HTMLElement>(id: string): T {
   return element as T;
 }
 
-const viewerParts = ["tree-row", "board", "controls", "analysis", "tabs", "explorer-source", "moves", "explorer", "games"].map(
-  (id) => byId(id),
-);
+const viewerParts = [
+  "tree-row",
+  "board",
+  "controls",
+  "analysis",
+  "tabs",
+  "explorer-source",
+  "games-bar",
+  "sync-confirm",
+  "games-filters",
+  "moves",
+  "explorer",
+  "games",
+].map((id) => byId(id));
 const gamesPanel = byId("games");
 const gamesStatus = byId("games-status");
 const gamesList = byId("games-list");
+const gamesMore = byId<HTMLButtonElement>("games-more");
+const gamesBar = byId("games-bar");
+const filtersToggle = byId<HTMLButtonElement>("filters-toggle");
+const filtersClear = byId<HTMLButtonElement>("filters-clear");
+const gamesFilters = byId("games-filters");
+const syncButton = byId<HTMLButtonElement>("sync");
+const syncConfirm = byId("sync-confirm");
+const syncYes = byId<HTMLButtonElement>("sync-yes");
+const syncNo = byId<HTMLButtonElement>("sync-no");
+const filterInputs = {
+  account: byId<HTMLSelectElement>("f-account"),
+  opponent: byId<HTMLInputElement>("f-opponent"),
+  color: byId<HTMLSelectElement>("f-color"),
+  result: byId<HTMLSelectElement>("f-result"),
+  termination: byId<HTMLSelectElement>("f-termination"),
+  speed: byId<HTMLSelectElement>("f-speed"),
+  rated: byId<HTMLSelectElement>("f-rated"),
+  thematic: byId<HTMLSelectElement>("f-thematic"),
+  from: byId<HTMLInputElement>("f-from"),
+  to: byId<HTMLInputElement>("f-to"),
+};
 const tabGames = byId<HTMLButtonElement>("tab-games");
 const treeSelect = byId<HTMLSelectElement>("tree-select");
 const treeCount = byId("tree-count");
@@ -223,7 +255,7 @@ function samePath(a: number[], b: number[]): boolean {
   return a.length === b.length && a.every((v, i) => v === b[i]);
 }
 
-// Moves tab: the tree as PGN text, variations in parentheses, every move
+// PGN tab: the tree as PGN text, variations in parentheses, every move
 // clickable. No game tags in the text: the tree selector names the tree's
 // game.
 function renderMoves(): void {
@@ -277,7 +309,7 @@ function renderMoves(): void {
   movesPanel.replaceChildren();
   renderLine(movesPanel, state.root, [], 0, true);
   if (!state.root.children.length) {
-    movesPanel.textContent = "No moves yet: drag a piece, or open a game from the Games tab or the Explorer.";
+    movesPanel.textContent = "No moves yet: drag a piece, or open a game from All Games or the Explorer.";
   }
   currentElement?.scrollIntoView({ block: "nearest" });
 }
@@ -570,8 +602,9 @@ buttons.mainline.addEventListener("click", () => {
   setPath(new Array<number>(depth).fill(0));
 });
 
-// Tabs: Moves | Explorer | Games. Explorer and Games read the accounts'
-// local game databases (never a site), each only while visible.
+// Tabs: PGN | Explorer | All Games (internally "moves", "explorer",
+// "games"). Explorer and All Games read the accounts' local game
+// databases (never a site), each only while visible.
 type Tab = "moves" | "explorer" | "games";
 let tab: Tab = "moves";
 
@@ -594,9 +627,15 @@ function showTab(next: Tab): void {
   movesPanel.hidden = tab !== "moves";
   explorerPanel.hidden = tab !== "explorer";
   gamesPanel.hidden = tab !== "games";
+  gamesBar.hidden = tab !== "games";
+  gamesFilters.hidden = tab !== "games" || !filtersOpen;
+  syncConfirm.hidden = true;
   updatePlayerControls();
   if (tab === "explorer") scheduleExplore();
-  if (tab === "games") void listRecentGames();
+  if (tab === "games") {
+    void listGames();
+    void followSync();
+  }
 }
 tabMoves.addEventListener("click", () => showTab("moves"));
 tabExplorer.addEventListener("click", () => showTab("explorer"));
@@ -718,7 +757,7 @@ function row(cells: [string, string][], onClick: () => void): HTMLLIElement {
   return li;
 }
 
-const RESULTS = { win: "won", draw: "drew", loss: "lost" };
+const RESULTS = { win: "win", draw: "draw", loss: "loss" };
 
 // Explorer source: the personal games (every account) or Local (the
 // server's Polyglot book, offered only when one is configured). A new
@@ -827,7 +866,7 @@ async function explore(): Promise<void> {
 
 // Opens a clicked game in its own tree; games are never merged into another
 // tree. If its tree is already open, that tree becomes current. From the
-// Games tab (a game to review) it shows the final position; from the
+// All Games tab (a game to review) it shows the final position; from the
 // Explorer, the searched position (else the final one).
 async function addGame(id: string, searchedFen: string, from: "explorer" | "games"): Promise<void> {
   if (!trees || stale) return;
@@ -888,29 +927,189 @@ async function addGame(id: string, searchedFen: string, from: "explorer" | "game
   }
 }
 
-// Games tab: every account's games, newest first, both colors (filters and
-// the sync button come with the All Games tab).
+// All Games: every account's games, newest first, both colors, narrowed by
+// the filters, 100 at a time ("More" adds the next page).
 
 let gamesRequest = 0;
+let filtersOpen = false;
+/** Games shown so far, and how many match the filters in all. */
+let gamesShown = 0;
+let gamesTotal = 0;
 
-async function listRecentGames(): Promise<void> {
+/** The filters as list_games arguments; an empty field means "any". */
+function filterArguments(): Record<string, unknown> {
+  const f = filterInputs;
+  const args: Record<string, unknown> = {};
+  if (f.account.value) args.account = f.account.value;
+  if (f.opponent.value.trim()) args.opponent = f.opponent.value.trim();
+  if (f.color.value) args.color = f.color.value;
+  if (f.result.value) args.result = f.result.value;
+  if (f.termination.value) args.termination = f.termination.value;
+  if (f.speed.value) args.speed = f.speed.value;
+  if (f.rated.value) args.rated = f.rated.value === "true";
+  if (f.thematic.value) args.thematic = f.thematic.value === "true";
+  // Dates are UTC days, as the list shows them; "to" includes its day.
+  if (f.from.value) args.from = f.from.valueAsNumber;
+  if (f.to.value) args.to = f.to.valueAsNumber + 86_400_000 - 1;
+  return args;
+}
+
+function filtersActive(): boolean {
+  return Object.keys(filterArguments()).length > 0;
+}
+
+/** Loads the first page (or, with `more`, the next one). */
+async function listGames(more = false): Promise<void> {
   if (!state || stale) return;
   const request = ++gamesRequest;
+  const offset = more ? gamesShown : 0;
   gamesStatus.textContent = "loading...";
+  filtersClear.hidden = !filtersActive();
+  filtersToggle.classList.toggle("active", filtersActive());
   try {
-    const result = await app.callServerTool({ name: "list_games", arguments: {} });
+    const result = await app.callServerTool({
+      name: "list_games",
+      arguments: { ...filterArguments(), offset },
+    });
     if (request !== gamesRequest) return;
     if (result.isError) {
       gamesStatus.textContent = textOf(result);
       gamesList.replaceChildren();
+      gamesMore.hidden = true;
       return;
     }
-    const data = (result.structuredContent ?? {}) as { games?: ListedGame[]; total?: number };
+    const data = (result.structuredContent ?? {}) as { games?: ListedGame[]; total?: number; accounts?: string[] };
+    fillAccounts(data.accounts ?? []);
     const games = data.games ?? [];
-    gamesStatus.textContent = `${data.total ?? 0} games; the last ${games.length} below`;
-    gamesList.replaceChildren(...games.map((g) => gameRow(g, () => void addGame(g.key, currentStep().fen, "games"))));
+    const rows = games.map((g) => gameRow(g, () => void addGame(g.key, currentStep().fen, "games")));
+    if (more) gamesList.append(...rows);
+    else gamesList.replaceChildren(...rows);
+    gamesShown = offset + games.length;
+    gamesTotal = data.total ?? 0;
+    gamesStatus.textContent =
+      gamesTotal === 0
+        ? filtersActive()
+          ? "No game matches the filters"
+          : "No games yet: sync to fetch them"
+        : `${gamesTotal} games${gamesShown < gamesTotal ? `; the last ${gamesShown} below` : ""}`;
+    gamesMore.hidden = gamesShown >= gamesTotal;
   } catch (error) {
     if (request === gamesRequest) gamesStatus.textContent = error instanceof Error ? error.message : "Loading failed";
+  }
+}
+
+/** The account filter's choices, from the server; filled once. */
+function fillAccounts(accounts: string[]): void {
+  const select = filterInputs.account;
+  if (select.options.length > 1 || accounts.length === 0) return;
+  for (const account of accounts) {
+    const option = document.createElement("option");
+    option.value = account;
+    option.textContent = account;
+    select.append(option);
+  }
+}
+
+filtersToggle.addEventListener("click", () => {
+  filtersOpen = !filtersOpen;
+  gamesFilters.hidden = !filtersOpen;
+});
+
+filtersClear.addEventListener("click", () => {
+  for (const input of Object.values(filterInputs)) input.value = "";
+  void listGames();
+});
+
+// A filter applies at once; the opponent's name after a short pause in
+// typing.
+let opponentTimer: ReturnType<typeof setTimeout> | undefined;
+for (const [name, input] of Object.entries(filterInputs)) {
+  if (name === "opponent") {
+    input.addEventListener("input", () => {
+      clearTimeout(opponentTimer);
+      opponentTimer = setTimeout(() => void listGames(), 400);
+    });
+  } else {
+    input.addEventListener("change", () => void listGames());
+  }
+}
+
+gamesMore.addEventListener("click", () => void listGames(true));
+
+// The sync: confirmed first (it may take minutes and fetch from both
+// sites), then started on the server, which runs it in the background; the
+// widget polls its status every 2 s and reloads the list at the end. A
+// widget opened during a sync finds it running and follows it too.
+
+interface SyncSummary {
+  account: string;
+  added: number;
+  skipped: number;
+  rejected: number;
+  error?: string;
+}
+
+const SYNC_POLL_MS = 2000;
+let syncTimer: ReturnType<typeof setTimeout> | undefined;
+
+syncButton.addEventListener("click", () => {
+  if (stale) return;
+  syncConfirm.hidden = false;
+  syncYes.focus();
+});
+syncNo.addEventListener("click", () => {
+  syncConfirm.hidden = true;
+});
+// A click on the dimmed backdrop, or Escape, cancels like Cancel.
+syncConfirm.addEventListener("click", (event) => {
+  if (event.target === syncConfirm) syncConfirm.hidden = true;
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !syncConfirm.hidden) syncConfirm.hidden = true;
+});
+syncYes.addEventListener("click", async () => {
+  syncConfirm.hidden = true;
+  if (stale) return;
+  syncButton.disabled = true;
+  gamesStatus.textContent = "starting sync...";
+  try {
+    const result = await app.callServerTool({ name: "sync_games", arguments: {} });
+    if (result.isError) {
+      gamesStatus.textContent = textOf(result);
+      syncButton.disabled = false;
+      return;
+    }
+    void followSync();
+  } catch (error) {
+    gamesStatus.textContent = error instanceof Error ? error.message : "Sync failed";
+    syncButton.disabled = false;
+  }
+});
+
+/** Polls sync_status while a sync runs; shows the summary at the end. */
+async function followSync(): Promise<void> {
+  clearTimeout(syncTimer);
+  if (stale) return;
+  try {
+    const result = await app.callServerTool({ name: "sync_status", arguments: {} });
+    const status = (result.structuredContent ?? {}) as { running?: boolean; progress?: string; summary?: SyncSummary[] };
+    if (status.running) {
+      syncButton.disabled = true;
+      if (tab === "games") gamesStatus.textContent = `Syncing: ${status.progress ?? ""}`;
+      syncTimer = setTimeout(() => void followSync(), SYNC_POLL_MS);
+      return;
+    }
+    // Only after a sync this widget followed: the button was disabled.
+    if (syncButton.disabled) {
+      syncButton.disabled = false;
+      await listGames();
+      const summary = (status.summary ?? [])
+        .map((s) => (s.error ? `${s.account}: ${s.error}` : `${s.account}: ${s.added} new`))
+        .join("; ");
+      if (summary) gamesStatus.textContent = `Sync done. ${summary}`;
+    }
+  } catch {
+    syncButton.disabled = false;
   }
 }
 

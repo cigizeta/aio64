@@ -15,7 +15,13 @@ Phase 1 complete. Phase 2 implemented (2026-11-12), not yet tested.
 Deviation: so that the widget keeps working between phases, phase 2
 also adapts it minimally (Explorer with plain counts and both colors,
 the Games tab reading `list_games` unfiltered, game keys); phase 3 adds
-the tab names, filters and sync button. Implements local-games-v1.md
+the tab names, filters and sync button. Phase 3 implemented
+(2026-11-12) and tested on desktop web by the developer: filters folded
+behind a "Filters" button (two-column grid, a "Clear" button when any is
+set), the sync button with its confirmation as an overlay over the
+widget (Escape or the backdrop cancel), results shown as win / draw /
+loss, `SYNC_ON_START` removed. Test 4 (claude.ai's own confirmation for
+`sync_games`) not yet recorded. Implements local-games-v1.md
 (decisions 1-11 and the settled open points).*
 
 Three phases, each ending in a working server and its own commit:
